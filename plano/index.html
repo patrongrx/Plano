@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Planificador Portals — Patrón Strength (Pedido China)</title>
+<style>
+  :root{ --bg:#111418; --panel:#1a1f26; --gold:#d4af37; --line:#2c333d; --txt:#e8e6e0; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ background:var(--bg); color:var(--txt); font-family:Arial,Helvetica,sans-serif; font-size:13px; }
+  header{ padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  header h1{ font-size:15px; color:var(--gold); letter-spacing:1px; }
+  header .meta{ font-size:11px; color:#9aa3ad; }
+  .wrap{ display:flex; flex-wrap:wrap; }
+  #side{ width:270px; min-width:230px; max-height:calc(100vh - 52px); overflow-y:auto; background:var(--panel); border-right:1px solid var(--line); padding:10px; }
+  #main{ flex:1; min-width:320px; padding:10px; }
+  fieldset{ border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:10px; }
+  legend{ padding:0 6px; color:var(--gold); font-size:11px; letter-spacing:1px; }
+  label{ display:block; font-size:11px; color:#9aa3ad; margin:6px 0 2px; }
+  input,select,button{ font-family:inherit; font-size:12px; }
+  input,select{ width:100%; background:#0d1013; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:5px 6px; }
+  .row{ display:flex; gap:6px; }
+  .row > *{ flex:1; }
+  button{ background:#242b34; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:6px 8px; cursor:pointer; margin-top:6px; width:100%; }
+  button:hover{ border-color:var(--gold); }
+  button.gold{ background:var(--gold); color:#111; font-weight:bold; border:none; }
+  button.danger{ background:#5c2222; }
+  .pal-item{ display:flex; justify-content:space-between; align-items:center; padding:5px 6px; margin:3px 0; background:#0d1013; border:1px solid var(--line); border-radius:4px; cursor:pointer; }
+  .pal-item:hover{ border-color:var(--gold); }
+  .pal-item .dims{ color:#8a929c; font-size:10px; white-space:nowrap; margin-left:6px; }
+  .pal-item .dot{ width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:6px; flex:none; }
+  #stats{ font-size:12px; margin:6px 0; color:#c9d1d9; }
+  #stats b{ color:var(--gold); }
+  #selInfo{ font-size:11px; color:#9aa3ad; min-height:16px; margin-bottom:4px; }
+  svg{ display:block; margin:0 auto; max-width:100%; max-height:calc(100vh - 210px); height:auto; background:#1b2330; border:1px solid var(--gold); border-radius:8px; touch-action:none; }
+  .item{ cursor:grab; touch-action:none; }
+  .item.sel{ cursor:grabbing; }
+  .item rect,.item ellipse,.item polygon{ stroke:#000; stroke-width:.03; }
+  .item.out rect,.item.out ellipse,.item.out polygon{ stroke:#ff4040; stroke-width:.09; }
+  .item text{ fill:#111; font-size:.32px; font-weight:bold; text-anchor:middle; pointer-events:none; }
+  .item.sel rect,.item.sel ellipse,.item.sel polygon,.item.sel line{ stroke:#fff; stroke-width:.07; stroke-dasharray:.15 .1; }
+  .lbl{ fill:#6b7480; font-size:.38px; letter-spacing:.05px; }
+  .lbl.gold{ fill:var(--gold); font-weight:bold; }
+  .hint{ font-size:10px; color:#727c88; margin-top:4px; line-height:1.4; }
+</style>
+</head>
+<body>
+<div id="lockScreen" style="position:fixed;inset:0;z-index:9999;background:#0d1015;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+  <div style="font-size:18px;color:#d4af37;letter-spacing:2px;font-family:Arial,sans-serif;">PATRÓN STRENGTH · PLANIFICADOR</div>
+  <div style="font-size:12px;color:#9aa3ad;">Introduce la contraseña para acceder</div>
+  <input id="lockPass" type="password" placeholder="Contraseña" autocomplete="off"
+         style="padding:10px 14px;width:220px;border:1px solid #2c333d;border-radius:6px;background:#1a1f26;color:#e8e6e0;font-size:14px;text-align:center;"
+         onkeydown="if(event.key==='Enter')tryUnlock();">
+  <button onclick="tryUnlock()" style="padding:9px 22px;background:#d4af37;color:#111;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entrar</button>
+  <div id="lockErr" style="font-size:11px;color:#e06666;height:14px;"></div>
+</div>
+<header>
+  <h1>PATRÓN STRENGTH — PLANIFICADOR PORTALS</h1>
+  <span class="meta">Avda. América 9 · 88 m² · cuña real · pedido China con medidas de catálogo</span>
+  <button id="btn3d" onclick="toggle3D()" style="flex:none;width:auto;margin:0 0 0 auto;padding:6px 14px;background:#d4af37;color:#111;font-weight:bold;">Ver en 3D</button>
+</header>
+<div class="wrap">
+  <div id="side">
+    <fieldset>
+      <legend>LOCAL</legend>
+      <div class="row">
+        <div><label>Ancho (m)</label><input type="number" id="inW" step="0.1" min="4"></div>
+        <div><label>Fondo (m)</label><input type="number" id="inH" step="0.1" min="4"></div>
+      </div>
+      <label>Forma</label>
+      <select id="inShape">
+        <option value="cuna">Cuña real (Portals)</option>
+        <option value="curva">Curva (cuarto elipse)</option>
+        <option value="rect">Rectángulo</option>
+      </select>
+      <div id="stats"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>PEDIDO CHINA — MÁQUINAS</legend>
+      <div id="palChina"></div>
+    </fieldset>
+    <fieldset>
+      <legend>PEDIDO CHINA — CARDIO</legend>
+      <div id="palCardio"></div>
+    </fieldset>
+    <fieldset>
+      <legend>PEDIDO CHINA — SOPORTES</legend>
+      <div id="palSop"></div>
+    </fieldset>
+    <fieldset>
+      <legend>MATERIAL PROPIO</legend>
+      <div id="palPropio"></div>
+    </fieldset>
+    <fieldset>
+      <legend>ZONAS Y OBRA</legend>
+      <div id="palZonas"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>PIEZA PERSONALIZADA</legend>
+      <input type="text" id="cName" placeholder="Nombre">
+      <div class="row">
+        <div><label>Ancho (m)</label><input type="number" id="cW" step="0.05" value="1"></div>
+        <div><label>Largo (m)</label><input type="number" id="cH" step="0.05" value="1"></div>
+      </div>
+      <button onclick="addCustom()">+ Añadir pieza</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>ARCHIVO</legend>
+      <button onclick="saveFile()">💾 Guardar archivo (.json)</button>
+      <button onclick="document.getElementById('fileIn').click()">📂 Cargar archivo</button>
+      <input type="file" id="fileIn" accept=".json" style="display:none" onchange="loadFile(event)">
+      <button class="danger" onclick="if(confirm('¿Vaciar el plano?')){state.items=[];selId=null;save();render();}">🗑 Vaciar plano</button>
+      <div class="hint">Autoguardado en este navegador. Para pasar el plano a otro dispositivo usa Guardar/Cargar archivo.</div>
+    </fieldset>
+  </div>
+
+  <div id="main">
+    <div id="selInfo">Toca una pieza de la paleta para añadirla · arrastra para mover · selecciona para editar</div>
+    <div class="row" style="max-width:560px">
+      <div><label>Ancho pieza (m)</label><input type="number" id="selW" step="0.05" onchange="editSel('w',this.value)"></div>
+      <div><label>Largo pieza (m)</label><input type="number" id="selH" step="0.05" onchange="editSel('h',this.value)"></div>
+      <div><label>Ángulo (°)</label><input type="number" id="selA" step="1" onchange="editSel('ang',this.value)"></div>
+      <div><label>Altura suelo (m)</label><input type="number" id="selE" step="0.05" min="0" onchange="editSel('elev',this.value)" title="Eleva la pieza en el 3D (para barras sobre el rack)"></div>
+    </div>
+    <div class="row" style="max-width:560px">
+      <button onclick="rot(15)">↻ 15°</button>
+      <button onclick="rot(90)">↻ 90°</button>
+      <button onclick="dup()">⧉ Duplicar</button>
+      <button class="danger" onclick="del()">✕ Borrar</button>
+    </div>
+    <div class="row" style="max-width:560px; align-items:center; margin-top:6px">
+      <label style="flex:none; margin:0 6px 0 0">🔍 Zoom</label>
+      <input type="range" id="zoom" min="40" max="160" value="100" style="flex:1" oninput="setZoom(this.value)">
+      <button style="flex:none; width:auto; margin:0 0 0 6px; padding:4px 10px" onclick="document.getElementById('zoom').value=100; setZoom(100)">Ajustar</button>
+    </div>
+    <svg id="svg" viewBox="-0.6 -0.6 10.2 13.2" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="hint">Rojo = pieza fuera del local. La cristalera y la columna no muestran etiqueta dentro: selecciónalas para ver su nombre en la barra. Deja pasillos ≥1 m entre estaciones.</div>
+  </div>
+</div>
+
+<div id="view3d" style="display:none;position:fixed;inset:52px 0 0 0;background:#0b0e11;">
+  <div style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;">
+    1 dedo / arrastrar = girar · 2 dedos = zoom y mover · rueda = zoom · Shift+arrastrar = desplazar
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+"use strict";
+const PAL = {
+  palChina: [
+    ["DF25 Smith 3en1", 2.35, 2.05, "#d4af37"],
+    ["DS02-A Jalón+Remo", 1.18, 1.82, "#d4af37"],
+    ["DH30A Abd/Add", 0.98, 1.59, "#d4af37"],
+    ["DS19A Ext+Femoral", 0.99, 1.41, "#d4af37"],
+    ["DH98 Belt Squat", 1.36, 2.25, "#d4af37"],
+    ["DH91 Hip Thrust", 1.70, 2.04, "#d4af37"],
+    ["D-806 Inercial", 0.57, 1.18, "#c9a227"],
+    ["D-022W Cajón plio", 0.50, 0.65, "#c9a227"]
+  ],
+  palCardio: [
+    ["DWX5 Cinta curva", 0.85, 1.95, "#5b9bd5"],
+    ["DK-701 Bici aire", 0.61, 1.20, "#5b9bd5"],
+    ["DK-669A Airbike", 0.69, 1.29, "#5b9bd5"],
+    ["DK-700A Ski erg", 0.60, 1.30, "#5b9bd5"]
+  ],
+  palSop: [
+    ["DF36 Banco ajust.", 0.77, 1.48, "#88b04b"],
+    ["DF62 Rack mancuernas", 1.71, 0.62, "#88b04b"],
+    ["DF64 Árbol discos", 0.73, 0.63, "#88b04b"],
+    ["DF65 Árbol discos", 0.60, 0.49, "#88b04b"],
+    ["DB21 Cambia-discos", 0.48, 1.06, "#88b04b"],
+    ["DB81 Sop. búlgara", 0.57, 0.75, "#88b04b"]
+  ],
+  palPropio: [
+    ["Jaula Titanium (tuya)", 1.20, 1.75, "#b07aa1"],
+    ["Rack Unistrength (tuyo)", 1.80, 1.60, "#b07aa1"],
+    ["Banco plano (tuyo)", 0.60, 1.25, "#b07aa1"],
+    ["Barra olímpica vacía", 0.05, 2.20, "#c9a24b"],
+    ["Barra cargada", 0.45, 2.20, "#c9a24b"]
+  ],
+  palZonas: [
+    ["Tarima PM 0.5×2", 0.50, 2.00, "#8a6d3b", "rect"],
+    ["Tarima PM 1×2", 1.00, 2.00, "#8a6d3b", "rect"],
+    ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
+    ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
+    ["Columna Ø50", 0.50, 0.50, "#333b44", "circle"],
+    ["Espejo pared", 1.90, 0.05, "#afd0d8", "rect"],
+    ["Cristalera (línea 1 m)", 1.00, 0.05, "#7fd4e8", "line"]
+  ]
+};
+let state = { W:9, H:12, declared:88, shape:"cuna", items:[] };
+let selId = null, nextId = 1;
+
+/* ===== Firebase (nube compartida) ===== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDcD90gR99IUPIsnagHU6m7M-nFCHajVvA",
+  authDomain: "plano-764fe.firebaseapp.com",
+  projectId: "plano-764fe",
+  storageBucket: "plano-764fe.firebasestorage.app",
+  messagingSenderId: "774094141520",
+  appId: "1:774094141520:web:3a2b8e670539a59cfe7955"
+};
+const PASSWORD = "patron2026";          // <-- contraseña de acceso (cámbiala si quieres)
+let db=null, docRef=null, cloudReady=false, applyingRemote=false, saveTimer=null;
+
+function initCloud(){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    docRef = db.collection("planos").doc("portals");
+    // escucha cambios en tiempo real (del otro dispositivo)
+    docRef.onSnapshot(snap=>{
+      if (!snap.exists) return;
+      const data = snap.data();
+      if (data && data.state){
+        const s = JSON.parse(data.state);
+        if (s && Array.isArray(s.items)){
+          applyingRemote = true;
+          state = s;
+          nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+          try{ syncInputs(); }catch(e){}
+          render();
+          applyingRemote = false;
+        }
+      }
+      cloudReady = true;
+    }, err=>{ console.warn("Firestore:", err); cloudReady=true; });
+  }catch(e){ console.warn("initCloud", e); }
+}
+
+function tryUnlock(){
+  const v = document.getElementById("lockPass").value;
+  if (v === PASSWORD){
+    document.getElementById("lockScreen").style.display = "none";
+    initCloud();
+  } else {
+    document.getElementById("lockErr").textContent = "Contraseña incorrecta";
+  }
+}
+
+
+function getOutline(){
+  const {W,H,shape} = state;
+  if (shape === "rect"){
+    const pts = [[0,0],[W,0],[W,H],[0,H]];
+    return { d:`M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`, pts };
+  }
+  if (shape === "curva"){
+    const pts = [[0,0],[W,0]];
+    for (let i=1;i<=24;i++){ const t=(i/24)*Math.PI/2; pts.push([W*Math.cos(t), H*Math.sin(t)]); }
+    return { d:`M 0 0 L ${W} 0 A ${W} ${H} 0 0 1 0 ${H} Z`, pts };
+  }
+  // Cuña real: medianera izq · tramo superior ESTRECHO (baño/almacén) · diagonal vecino hasta la punta · arco de ventanas hasta la entrada
+  const A=[0,0], B=[0.40*W,0], C=[W,0.42*H], ctrl=[0.88*W,1.04*H], D=[0.12*W,0.97*H], E=[0,0.97*H];
+  const pts=[A,B,C];
+  for (let i=1;i<=24;i++){
+    const t=i/24, u=1-t;
+    pts.push([u*u*C[0]+2*u*t*ctrl[0]+t*t*D[0], u*u*C[1]+2*u*t*ctrl[1]+t*t*D[1]]);
+  }
+  pts.push(E);
+  const d = `M ${A[0]} ${A[1]} L ${B[0]} ${B[1]} L ${C[0]} ${C[1]} Q ${ctrl[0]} ${ctrl[1]} ${D[0]} ${D[1]} L ${E[0]} ${E[1]} Z`;
+  return { d, pts };
+}
+
+// Terraza exterior de 5 m siguiendo la curva de la cristalera (solo forma "cuna")
+const TERRAZA_FONDO = 5;
+function bezPt(C,ctrl,D,t){ const u=1-t; return [u*u*C[0]+2*u*t*ctrl[0]+t*t*D[0], u*u*C[1]+2*u*t*ctrl[1]+t*t*D[1]]; }
+function bezTan(C,ctrl,D,t){ const u=1-t; return [2*(u*(ctrl[0]-C[0])+t*(D[0]-ctrl[0])), 2*(u*(ctrl[1]-C[1])+t*(D[1]-ctrl[1]))]; }
+function getTerraza(){
+  const {W,H,shape}=state;
+  if (shape!=="cuna") return null;
+  const C=[W,0.42*H], ctrl=[0.88*W,1.04*H], D=[0.12*W,0.97*H], E=[0,0.97*H];
+  const N=24, inner=[], outer=[], f=TERRAZA_FONDO;
+  // Borde INTERIOR de la terraza = el propio contorno del local (entrada E→D + curva cristalera D→C).
+  inner.push(E, D);
+  for (let i=1;i<=N;i++){
+    const t=i/N, u=1-t;
+    inner.push([u*u*D[0]+2*u*t*ctrl[0]+t*t*C[0], u*u*D[1]+2*u*t*ctrl[1]+t*t*C[1]]);
+  }
+  // Borde EXTERIOR = misma forma desplazada f metros hacia la calle (alejándose del interior).
+  const ref=[0.45*W, 0.45*H];        // punto interior de referencia (centro aproximado del local)
+  for (let k=0;k<inner.length;k++){
+    const prev=inner[Math.max(0,k-1)], next=inner[Math.min(inner.length-1,k+1)];
+    let tx=next[0]-prev[0], ty=next[1]-prev[1];
+    const tl=Math.hypot(tx,ty)||1; tx/=tl; ty/=tl;
+    let nx=ty, ny=-tx;                                   // normal
+    // orientar la normal en sentido contrario al interior del local
+    if ((inner[k][0]-ref[0])*nx + (inner[k][1]-ref[1])*ny < 0){ nx=-nx; ny=-ny; }
+    outer.push([inner[k][0]+nx*f, inner[k][1]+ny*f]);
+  }
+  let d=`M ${inner[0][0].toFixed(3)} ${inner[0][1].toFixed(3)}`;
+  for (let i=1;i<inner.length;i++) d+=` L ${inner[i][0].toFixed(3)} ${inner[i][1].toFixed(3)}`;
+  for (let i=outer.length-1;i>=0;i--) d+=` L ${outer[i][0].toFixed(3)} ${outer[i][1].toFixed(3)}`;
+  d+=" Z";
+  // etiqueta: punto medio entre borde interior y exterior, hacia la mitad del recorrido
+  const mi=inner[Math.floor(inner.length/2)], mo=outer[Math.floor(outer.length/2)];
+  const lbl=[(mi[0]+mo[0])/2, (mi[1]+mo[1])/2];
+  const area=polyArea([...inner,...outer.slice().reverse()]);
+  return { d, lbl, area, maxX: Math.max(...outer.map(p=>p[0])), maxY: Math.max(...outer.map(p=>p[1])) };
+}
+
+function polyArea(pts){
+  let a=0;
+  for (let i=0;i<pts.length;i++){
+    const j=(i+pts.length-1)%pts.length;
+    a += (pts[j][0]+pts[i][0])*(pts[j][1]-pts[i][1]);
+  }
+  return Math.abs(a/2);
+}
+function inside(x,y,pts){
+  let inp=false;
+  for (let i=0;i<pts.length;i++){
+    const j=(i+pts.length-1)%pts.length;
+    const xi=pts[i][0], yi=pts[i][1], xj=pts[j][0], yj=pts[j][1];
+    if ((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) inp=!inp;
+  }
+  return inp;
+}
+function corners(it){
+  const a = (it.ang||0)*Math.PI/180, cx=it.x, cy=it.y;
+  const hw=it.w/2, hh=it.h/2, cos=Math.cos(a), sin=Math.sin(a);
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(p=>[cx+p[0]*cos-p[1]*sin, cy+p[0]*sin+p[1]*cos]);
+}
+function isOut(it, pts){
+  if (it.shape === "line") return false;
+  // Solo marca rojo si el CENTRO de la pieza está fuera del local.
+  // Tocar paredes, solapar la línea del contorno o rozar la diagonal ya no avisa.
+  return !inside(it.x, it.y, pts);
+}
+
+function addItem(name,w,h,color,shape){
+  const it = { id:nextId++, name, w:+w, h:+h, x:state.W/2, y:state.H/2, ang:0, color, shape:shape||"rect" };
+  if (/barra/i.test(name)) it.elev = 1.30;   // barras aparecen a altura de rack
+  if (/espejo/i.test(name)) it.elev = 0.20;  // espejo colgado a 20 cm del suelo
+  state.items.push(it); selId = it.id; save(); render();
+}
+function addCustom(){
+  const n = document.getElementById("cName").value.trim() || "Pieza";
+  addItem(n, +document.getElementById("cW").value||1, +document.getElementById("cH").value||1, "#e07b39", "rect");
+}
+function getSel(){ return state.items.find(i=>i.id===selId); }
+function editSel(k,v){ const it=getSel(); if(!it) return; it[k]=+v||0; save(); render(); }
+function rot(d){ const it=getSel(); if(!it) return; it.ang=((it.ang||0)+d)%360; save(); render(); }
+function dup(){ const it=getSel(); if(!it) return; const c={...it,id:nextId++,x:it.x+0.4,y:it.y+0.4}; state.items.push(c); selId=c.id; save(); render(); }
+function del(){ if(selId==null) return; state.items=state.items.filter(i=>i.id!==selId); selId=null; save(); render(); }
+
+function save(){
+  try{ localStorage.setItem("patron_portals_china", JSON.stringify(state)); }catch(e){}
+  // subir a la nube (evita rebote cuando el cambio vino de la nube)
+  if (docRef && !applyingRemote){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{
+      docRef.set({ state: JSON.stringify(state), updated: Date.now() })
+            .catch(e=>console.warn("save cloud", e));
+    }, 400);
+  }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem("patron_portals_china");
+    if (raw){ const s = JSON.parse(raw); if (s && s.items){ state = s; } }
+  }catch(e){}
+  nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+}
+function saveFile(){
+  const blob = new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "plano_portals_china.json"; a.click();
+  URL.revokeObjectURL(a.href);
+}
+function loadFile(ev){
+  const f = ev.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const s = JSON.parse(r.result);
+      if (s && Array.isArray(s.items)){ state = s; nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1; selId=null; save(); syncInputs(); render(); }
+      else alert("Archivo no válido");
+    }catch(e){ alert("Archivo no válido"); }
+  };
+  r.readAsText(f); ev.target.value = "";
+}
+
+function buildPalettes(){
+  for (const [pid, arr] of Object.entries(PAL)){
+    const box = document.getElementById(pid);
+    box.innerHTML = "";
+    arr.forEach(([name,w,h,color,shape])=>{
+      const div = document.createElement("div");
+      div.className = "pal-item";
+      div.innerHTML = `<span><span class="dot" style="background:${color}"></span>${name}</span><span class="dims">${w.toFixed(2)}×${h.toFixed(2)}</span>`;
+      div.onclick = ()=>addItem(name,w,h,color,shape);
+      box.appendChild(div);
+    });
+  }
+}
+
+function syncInputs(){
+  document.getElementById("inW").value = state.W;
+  document.getElementById("inH").value = state.H;
+  document.getElementById("inShape").value = state.shape;
+}
+
+let drag = null;
+function svgPoint(ev){
+  const svg = document.getElementById("svg");
+  const pt = svg.createSVGPoint();
+  pt.x = ev.clientX; pt.y = ev.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+function startDrag(ev,id){
+  ev.preventDefault();
+  ev.stopPropagation();
+  selId = id;
+  const it = getSel(), p = svgPoint(ev);
+  drag = { id, dx:it.x-p.x, dy:it.y-p.y, moved:false, node:null };
+  // captura el puntero para que el dedo no pierda la pieza al moverse rápido
+  try{ ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId); }catch(e){}
+  render();
+  // guarda el nodo <g> de la pieza para moverlo en vivo sin redibujar todo
+  drag.node = document.querySelector('.item[data-id="'+id+'"]');
+}
+function moveDrag(ev){
+  if(!drag) return;
+  ev.preventDefault();
+  const it = state.items.find(i=>i.id===drag.id); if(!it) return;
+  const p = svgPoint(ev);
+  it.x = Math.round((p.x+drag.dx)*20)/20;
+  it.y = Math.round((p.y+drag.dy)*20)/20;
+  drag.moved = true;
+  // mover SOLO esta pieza (rápido); sin redibujar el SVG entero
+  if (drag.node){
+    drag.node.setAttribute("transform", `translate(${it.x} ${it.y}) rotate(${it.ang||0})`);
+  } else {
+    render(false);
+  }
+}
+function endDrag(){ if(drag){ drag=null; save(); render(); } }
+
+
+function render(full=true){
+  const svg = document.getElementById("svg");
+  const {W,H} = state;
+  const o = getOutline();
+  const areaLocal = polyArea(o.pts);
+  const terr = getTerraza();
+  const rightPad = terr ? (terr.maxX - W + 0.6) : 0.6;
+  const botPad = terr ? Math.max(1.2, terr.maxY - H + 0.9) : 1.2;
+  svg.setAttribute("viewBox", `${-0.6} ${-0.6} ${W+0.6+rightPad} ${H+0.6+botPad}`);
+  let g = "";
+  if (terr){
+    g += `<path d="${terr.d}" fill="#1d2a1f" stroke="#4f7a52" stroke-width="0.05" stroke-dasharray="0.25 0.15"/>`;
+    g += `<text class="lbl" x="${terr.lbl[0].toFixed(2)}" y="${terr.lbl[1].toFixed(2)}" style="fill:#7bbf7e" text-anchor="middle">TERRAZA 5 m · ${terr.area.toFixed(0)} m²</text>`;
+  }
+  g += `<path d="${o.d}" fill="#2e3a4d" stroke="#d4af37" stroke-width="0.09"/>`;
+  // grid
+  for (let x=1;x<W;x++) g += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#44546b" stroke-width="0.02"/>`;
+  for (let y=1;y<H;y++) g += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#44546b" stroke-width="0.02"/>`;
+  if (state.shape === "cuna"){
+    g += `<text class="lbl gold" x="${0.06*W}" y="${1.02*H}">ENTRADA</text>`;
+    g += `<text class="lbl" x="${0.55*W}" y="${0.88*H}" transform="rotate(-12 ${0.55*W} ${0.88*H})">ventanas (fachada curva)</text>`;
+    g += `<text class="lbl" x="${0.62*W}" y="${0.18*H}" transform="rotate(37 ${0.62*W} ${0.18*H})">medianera vecino</text>`;
+    g += `<text class="lbl" x="${0.05*W}" y="-0.15">baño/almacén en esta esquina ↑</text>`;
+  }
+  let occ = 0, out = 0;
+  for (const it of state.items){
+    const bad = isOut(it, o.pts);
+    if (bad) out++;
+    if (it.shape !== "line") occ += it.w*it.h;
+    const cls = "item" + (bad?" out":"") + (it.id===selId?" sel":"");
+    const tr = `transform="translate(${it.x} ${it.y}) rotate(${it.ang||0})"`;
+    const ev = `data-id="${it.id}" onpointerdown="startDrag(event,${it.id})"`;
+    if (it.shape === "circle"){
+      g += `<g class="${cls}" ${tr} ${ev}><ellipse rx="${it.w/2}" ry="${it.h/2}" fill="${it.color}"/></g>`;
+    } else if (it.shape === "tri"){
+      g += `<g class="${cls}" ${tr} ${ev}><polygon points="${-it.w/2},${-it.h/2} ${it.w/2},${-it.h/2} ${-it.w/2},${it.h/2}" fill="${it.color}" opacity="0.85"/>` +
+           (it.w>1.2?`<text y="-0.1">${it.name}</text><text y="0.3" style="font-size:.26px">${(it.w*it.h/2).toFixed(1)} m²</text>`:"") + `</g>`;
+    } else if (it.shape === "line"){
+      g += `<g class="${cls}" ${tr} ${ev}><line x1="${-it.w/2}" y1="0" x2="${it.w/2}" y2="0" stroke="${it.color}" stroke-width="0.09"/><rect x="${-it.w/2}" y="-0.12" width="${it.w}" height="0.24" fill="transparent"/></g>`;
+    } else {
+      const showLbl = it.w>0.85 && it.h>0.55;
+      g += `<g class="${cls}" ${tr} ${ev}><rect x="${-it.w/2}" y="${-it.h/2}" width="${it.w}" height="${it.h}" rx="0.06" fill="${it.color}" opacity="1"/>` +
+           (showLbl?`<text y="0.05">${it.name}</text><text y="0.4" style="font-size:.24px">${it.w.toFixed(2)}×${it.h.toFixed(2)}</text>`:"") + `</g>`;
+    }
+  }
+  svg.innerHTML = g;
+  document.getElementById("stats").innerHTML =
+    `Local: <b>${areaLocal.toFixed(1)} m²</b> · Ocupado: <b>${occ.toFixed(1)} m²</b> (${(100*occ/areaLocal).toFixed(0)}%) · Piezas: ${state.items.length}` +
+    (out?` · <span style="color:#ff4040">${out} fuera del local</span>`:"");
+  const it = getSel();
+  document.getElementById("selInfo").textContent = it ? `Seleccionada: ${it.name} — ${it.w.toFixed(2)}×${it.h.toFixed(2)} m · ${it.ang||0}°` : "Toca una pieza de la paleta para añadirla · arrastra para mover · selecciona para editar";
+  if (full && it){
+    document.getElementById("selW").value = it.w;
+    document.getElementById("selH").value = it.h;
+    document.getElementById("selA").value = it.ang||0;
+    document.getElementById("selE").value = it.elev||0;
+  }
+}
+
+function setZoom(v){
+  const svg = document.getElementById("svg");
+  if (+v === 100){ svg.style.width = ""; svg.style.maxHeight = "calc(100vh - 210px)"; }
+  else { svg.style.maxHeight = "none"; svg.style.width = (+v) + "%"; }
+}
+
+document.getElementById("inW").addEventListener("change", e=>{ state.W=+e.target.value||9; save(); render(); });
+document.getElementById("inH").addEventListener("change", e=>{ state.H=+e.target.value||12; save(); render(); });
+document.getElementById("inShape").addEventListener("change", e=>{ state.shape=e.target.value; save(); render(); });
+window.addEventListener("pointermove", moveDrag, {passive:false});
+window.addEventListener("pointerup", endDrag);
+window.addEventListener("pointercancel", endDrag);
+
+/* =================== VISTA 3D =================== */
+// Altura real (m) por máquina, del documento de China
+function itemHeight(name){
+  const n = (name||"").toLowerCase();
+  if (n.includes("unistrength")) return 1.60;   // combo rack con soportes en posición
+  if (n.includes("df25")||n.includes("smith")) return 2.32;
+  if (n.includes("jaula")||n.includes("titanium")) return 2.30;
+  if (n.includes("ds02")||n.includes("jalón")||n.includes("jalon")||n.includes("remo")) return 2.34;
+  if (n.includes("ds19")||n.includes("ext")||n.includes("femoral")) return 1.64;
+  if (n.includes("dh30")||n.includes("abd")||n.includes("add")) return 0.94;
+  if (n.includes("dh91")||n.includes("hip thrust")) return 1.41;
+  if (n.includes("dh98")||n.includes("belt squat")) return 1.82;
+  if (n.includes("cinta")||n.includes("dwx")) return 1.77;
+  if (n.includes("ski")||n.includes("dk-700")) return 2.14;
+  if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
+  if (n.includes("bici")||n.includes("dk-701")) return 1.00;
+  if (n.includes("tarima pm")) return 0.07;
+  if (n.includes("espejo")) return 1.13;
+  if (n.includes("barra cargada")) return 0.45;
+  if (n.includes("barra olímpica")||n.includes("barra olimpica")) return 0.05;
+  if (n.includes("df62")||n.includes("rack mancuernas")) return 0.89;
+  if (n.includes("df36")||n.includes("banco ajust")) return 1.22;
+  if (n.includes("df64")) return 1.03;
+  if (n.includes("df65")||n.includes("árbol")||n.includes("arbol")) return 1.26;
+  if (n.includes("cambia")) return 0.85;
+  if (n.includes("búlgara")||n.includes("bulgara")) return 0.50;
+  if (n.includes("columna")) return 2.80;
+  if (n.includes("banco")||n.includes("plano")) return 0.50;
+  if (n.includes("cajón")||n.includes("cajon")||n.includes("inercial")||n.includes("plio")) return 0.55;
+  if (n.includes("baño")||n.includes("almacén")||n.includes("almacen")) return 2.40;
+  return 1.20;
+}
+const WALL_H = 2.8, GLASS_H = 2.6;
+let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null };
+
+function hexToInt(c){ return parseInt((c||"#888888").replace("#",""),16); }
+
+/* ---- Constructor de estructura 3D por tipo de máquina ----
+   Ejes locales del grupo: X = ancho (w) = FRENTE, Z = fondo (h), Y = altura.
+   El grupo se centra en (0,0) y luego se posiciona/rota en la escena.       */
+const MAT_STEEL = ()=> new THREE.MeshStandardMaterial({ color:0x1c1c1f, roughness:0.55, metalness:0.4 });
+const MAT_PAD   = ()=> new THREE.MeshStandardMaterial({ color:0x111114, roughness:0.9, metalness:0.05 });
+const MAT_BAR   = ()=> new THREE.MeshStandardMaterial({ color:0x9a9a9f, roughness:0.35, metalness:0.7 });
+
+function post(g, x, z, h, s, mat){ // poste vertical
+  const geo = new THREE.BoxGeometry(s, h, s);
+  const m = new THREE.Mesh(geo, mat||MAT_STEEL());
+  m.position.set(x, h/2, z); g.add(m);
+  return m;
+}
+function beamX(g, x, y, z, len, s, mat){ const m=new THREE.Mesh(new THREE.BoxGeometry(len,s,s),mat||MAT_STEEL()); m.position.set(x,y,z); g.add(m); return m; }
+function beamZ(g, x, y, z, len, s, mat){ const m=new THREE.Mesh(new THREE.BoxGeometry(s,s,len),mat||MAT_STEEL()); m.position.set(x,y,z); g.add(m); return m; }
+function barX(g, x, y, z, len, r, mat){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,12),mat||MAT_BAR()); m.rotation.z=Math.PI/2; m.position.set(x,y,z); g.add(m); return m; }
+function box(g, x,y,z, w,h,d, mat){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat||MAT_STEEL()); m.position.set(x,y,z); g.add(m); return m; }
+
+/* Carga un .glb, lo orienta de pie, lo escala a (targetW x targetD footprint, targetH alto)
+   y lo centra sobre el suelo dentro del grupo g. */
+let _gltfLoader = null;
+function gltfLoader(){
+  if (_gltfLoader) return _gltfLoader;
+  const l = new THREE.GLTFLoader();
+  if (typeof THREE.DRACOLoader !== "undefined"){
+    const draco = new THREE.DRACOLoader();
+    draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.6/");
+    l.setDRACOLoader(draco);
+  }
+  _gltfLoader = l; return l;
+}
+function loadGLB(g, url, targetW, targetD, targetH, uniform){
+  if (typeof THREE.GLTFLoader === "undefined"){
+    console.warn("GLTFLoader no disponible");
+    box(g, 0, targetH/2, 0, targetW*0.6, targetH, targetD*0.6);
+    return;
+  }
+  gltfLoader().load(url, gltf=>{
+    const model = gltf.scene;
+    model.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    // Meshy exporta de pie (Y = altura). NO tocar la vertical.
+    let bb = new THREE.Box3().setFromObject(model);
+    let size = new THREE.Vector3(); bb.getSize(size);
+    // ¿El modelo viene girado 90°? Comparar su proporción ancho/fondo con la real.
+    const realWide = targetW >= targetD;
+    const modelWide = size.x >= size.z;
+    if (realWide !== modelWide){
+      model.rotation.y = Math.PI/2;
+      bb = new THREE.Box3().setFromObject(model);
+      size = new THREE.Vector3(); bb.getSize(size);
+    }
+    if (uniform){
+      // BARRA: escala uniforme al largo real (el mayor de ancho/fondo), sin deformar los discos
+      const largo = Math.max(targetW, targetD);
+      const ejeLargo = Math.max(size.x, size.z) || 1;
+      model.scale.setScalar(largo/ejeLargo);
+    } else {
+      // escala por eje a medidas reales
+      model.scale.set(targetW/(size.x||1), targetH/(size.y||1), targetD/(size.z||1));
+    }
+    // recentrar en x,z
+    const bb3 = new THREE.Box3().setFromObject(model);
+    const c = new THREE.Vector3(); bb3.getCenter(c);
+    model.position.x -= c.x;
+    model.position.z -= c.z;
+    if (uniform){
+      // barra: centrar también en Y (la elevación la pone it.elev); no apoyar al suelo
+      model.position.y -= c.y;
+    } else {
+      model.position.y -= bb3.min.y;   // apoyar al suelo
+    }
+    g.add(model);
+  }, undefined, err=>{
+    console.warn("Error cargando GLB:", url, err);
+    box(g, 0, targetH/2, 0, targetW*0.6, targetH, targetD*0.6);
+  });
+}
+
+// Mapa: qué modelo .glb usa cada máquina (por código chino en el nombre)
+const GLB_MAP = [
+  ["unistrength", "models/rack_unistrength.glb"],
+  ["df25",        "models/DF25.glb"],
+  ["smith",       "models/DF25.glb"],
+  ["ds02",        "models/DS02A.glb"],
+  ["jalón",       "models/DS02A.glb"],
+  ["jalon",       "models/DS02A.glb"],
+  ["ds19",        "models/DS19A.glb"],
+  ["ext+femoral", "models/DS19A.glb"],
+  ["dh30",        "models/DH30A.glb"],
+  ["abd",         "models/DH30A.glb"],
+  ["dh91",        "models/DH91.glb"],
+  ["hip thrust",  "models/DH91.glb"],
+  ["dh98",        "models/DH98.glb"],
+  ["belt squat",  "models/DH98.glb"],
+  ["df62",        "models/DF62.glb"],
+  ["rack mancuernas", "models/DF62.glb"],
+  ["df36",        "models/banco_inclinable.glb"],
+  ["banco ajust", "models/banco_inclinable.glb"],
+  ["df64",        "models/rack_discos_deluxe.glb"],
+  ["df65",        "models/plate_tree.glb"],
+  ["árbol",       "models/plate_tree.glb"],
+  ["arbol",       "models/plate_tree.glb"],
+  ["columna",     "models/columna.glb"],
+  ["barra cargada", "models/barra_cargada.glb"],
+  ["barra olímpica","models/barra_olimpica.glb"],
+  ["barra olimpica","models/barra_olimpica.glb"],
+  ["tarima pm",   "models/tarima.glb"],
+  ["espejo",      "models/espejo.glb"],
+  ["dk-701",      "models/DK701.glb"],
+  ["dk701",       "models/DK701.glb"],
+  ["bici",        "models/DK701.glb"],
+  ["dk-700",      "models/DK700A.glb"],
+  ["ski",         "models/DK700A.glb"],
+  ["dk-669",      "models/DK669A.glb"],
+  ["airbike",     "models/DK669A.glb"],
+  ["dwx5",        "models/DWX5.glb"],
+  ["cinta",       "models/DWX5.glb"]
+];
+function glbFor(name){
+  const n=(name||"").toLowerCase();
+  for (const [key,url] of GLB_MAP){ if (n.includes(key)) return url; }
+  return null;
+}
+
+function buildMachine(it){
+  const g = new THREE.Group();
+  const n = (it.name||"").toLowerCase();
+  const w = it.w, d = it.h;               // w = ancho/frente, d = fondo
+  const col = hexToInt(it.color);
+  const s = 0.06;                         // grosor de perfil de acero
+
+  // === Si hay modelo 3D real para esta pieza, cargarlo ===
+  const glb = glbFor(it.name);
+  if (glb){
+    const isBar = n.includes("barra");   // barras: escala uniforme para no deformar los discos
+    loadGLB(g, glb, w, d, itemHeight(it.name), isBar);
+    return g;
+  }
+
+  // === Tarima de peso muerto: losa lisa de 5 cm ===
+  if (n.includes("tarima pm")){
+    const H = 0.05;
+    box(g, 0, H/2, 0, w, H, d, new THREE.MeshStandardMaterial({ color:col, roughness:0.85, metalness:0.05 }));
+    return g;
+  }
+
+  // === Smith / DF25 3en1 como RACK DE 6 POSTES ===
+  if (n.includes("smith") || n.includes("df25")){
+    const H = 2.30, hw = w/2 - s, hd = d/2 - s;
+    // 4 postes de la caja principal
+    for (const sx of [-hw, hw]) for (const sz of [-hd, hd]) post(g, sx, sz, H, 0.08);
+    // 2 postes traseros extra (torres de polea)
+    post(g, hw*0.15, -hd, H, 0.07);
+    post(g, hw*0.15,  hd, H, 0.07);
+    // travesaños superiores (perímetro)
+    beamX(g, 0, H, -hd, w-0.1, 0.07); beamX(g, 0, H, hd, w-0.1, 0.07);
+    beamZ(g, -hw, H, 0, d-0.1, 0.07); beamZ(g, hw, H, 0, d-0.1, 0.07);
+    // barra guiada del Smith (a media altura, frente)
+    barX(g, 0, 1.15, -hd*0.7, w-0.2, 0.025);
+    // barras de seguridad a media altura
+    beamZ(g, -hw, 0.5, 0, d-0.1, 0.05); beamZ(g, hw, 0.5, 0, d-0.1, 0.05);
+    return g;
+  }
+
+  // === Jaula / rack de potencia (4 postes, hueco) ===
+  if (n.includes("jaula") || n.includes("titanium") || n.includes("power") || n.includes("rack") && !n.includes("mancuern")){
+    const H = 2.25, hw = w/2 - s, hd = d/2 - s;
+    for (const sx of [-hw, hw]) for (const sz of [-hd, hd]) post(g, sx, sz, H, 0.08);
+    beamX(g, 0, H, -hd, w-0.1, 0.07); beamX(g, 0, H, hd, w-0.1, 0.07);
+    beamZ(g, -hw, H, 0, d-0.1, 0.07); beamZ(g, hw, H, 0, d-0.1, 0.07);
+    beamZ(g, -hw, 0.9, 0, d-0.1, 0.05); beamZ(g, hw, 0.9, 0, d-0.1, 0.05); // safeties
+    return g;
+  }
+
+  // === Rack de mancuernas / árbol de discos (estructura baja escalonada) ===
+  if (n.includes("mancuern") || n.includes("árbol") || n.includes("arbol") || n.includes("cambia") || n.includes("disco")){
+    const H = 1.1;
+    box(g, 0, 0.05, 0, w, 0.10, d);                    // base
+    for (const lvl of [0.4, 0.75, 1.05]) beamX(g, 0, lvl, -d*0.2, w-0.1, 0.08); // baldas inclinadas
+    for (const sx of [-w/2+s, w/2-s]) post(g, sx, d*0.3, H, 0.06);
+    return g;
+  }
+
+  // === Banco plano / ajustable (bajo) ===
+  if (n.includes("banco") || n.includes("plano")){
+    box(g, 0, 0.45, 0, w*0.9, 0.12, d*0.85, MAT_PAD());
+    box(g, 0, 0.22, 0, 0.10, 0.44, d*0.4);
+    box(g, 0, 0.05, -d*0.35, w*0.6, 0.10, 0.10);
+    box(g, 0, 0.05,  d*0.35, w*0.6, 0.10, 0.10);
+    return g;
+  }
+
+  // === Cardio (cinta/bici/ski): volumen más macizo, sí ocupa ===
+  if (n.includes("cinta") || n.includes("bici") || n.includes("airbike") || n.includes("ski")){
+    const H = itemHeight(it.name);
+    box(g, 0, 0.15, 0, w, 0.30, d, new THREE.MeshStandardMaterial({color:col,roughness:0.6})); // base
+    box(g, 0, H*0.6, d*0.35, w*0.8, H*0.9, 0.12, new THREE.MeshStandardMaterial({color:col,roughness:0.6})); // consola/mástil
+    return g;
+  }
+
+  // === Máquinas de placas (jalón, remo, abd/add, ext/femoral, hip thrust, belt squat, prensa) ===
+  // Estas SÍ son bastante macizas: caja + torre de placas.
+  {
+    const H = itemHeight(it.name);
+    const mat = new THREE.MeshStandardMaterial({ color:col, roughness:0.7, metalness:0.15 });
+    box(g, 0, 0.12, 0, w, 0.24, d, mat);                       // chasis bajo
+    box(g, w*0.30, H/2, -d*0.25, w*0.35, H, d*0.4, mat);       // torre de placas
+    if (n.includes("jalón")||n.includes("jalon")||n.includes("remo")) box(g,0,H*0.9,d*0.2,0.6,0.1,0.1); // brazo alto
+    if (n.includes("hip")||n.includes("belt")) { box(g,0,0.35,0,w*0.5,0.14,d*0.6,MAT_PAD()); } // pad
+    return g;
+  }
+}
+
+function build3D(){
+  const host = document.getElementById("view3d");
+  // limpiar render previo
+  if (R3.renderer){ host.removeChild(R3.renderer.domElement); R3.renderer.dispose(); }
+  const W = host.clientWidth, H = host.clientHeight;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xe8e6e2);
+  scene.fog = new THREE.Fog(0xe8e6e2, 26, 60);
+  const cam = new THREE.PerspectiveCamera(50, W/H, 0.1, 200);
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(W, H); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15; }
+  if ("outputEncoding" in renderer && THREE.sRGBEncoding!==undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+  host.appendChild(renderer.domElement);
+
+  // --- Texturas procedurales ---
+  function rubberTexture(){
+    const c=document.createElement("canvas"); c.width=c.height=256; const x=c.getContext("2d");
+    x.fillStyle="#1a1a1c"; x.fillRect(0,0,256,256);
+    for(let i=0;i<900;i++){ const g=180+Math.random()*60; x.fillStyle="rgba("+g+","+g+","+g+","+(0.5+Math.random()*0.5)+")"; const s=Math.random()*2+0.5; x.fillRect(Math.random()*256,Math.random()*256,s,s); }
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+  }
+  function cementTexture(base){
+    const c=document.createElement("canvas"); c.width=c.height=256; const x=c.getContext("2d");
+    x.fillStyle=base; x.fillRect(0,0,256,256);
+    for(let i=0;i<120;i++){ const a=Math.random()*0.06; x.fillStyle="rgba(0,0,0,"+a+")"; const r=20+Math.random()*60; x.beginPath(); x.arc(Math.random()*256,Math.random()*256,r,0,7); x.fill(); }
+    for(let i=0;i<80;i++){ const a=Math.random()*0.05; x.fillStyle="rgba(255,255,255,"+a+")"; const r=15+Math.random()*50; x.beginPath(); x.arc(Math.random()*256,Math.random()*256,r,0,7); x.fill(); }
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+  }
+
+  // --- Iluminación cálida tipo foco de carril ---
+  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x50504e, 0.85));
+  const key = new THREE.DirectionalLight(0xfff1e0, 1.25);
+  key.position.set(state.W*0.6, 12, state.H*0.15);
+  key.castShadow = true;
+  key.shadow.mapSize.width = 2048; key.shadow.mapSize.height = 2048;
+  const dsz = Math.max(state.W, state.H) + 4;
+  key.shadow.camera.left=-dsz; key.shadow.camera.right=dsz; key.shadow.camera.top=dsz; key.shadow.camera.bottom=-dsz;
+  key.shadow.camera.near=0.5; key.shadow.camera.far=45; key.shadow.bias=-0.0004;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xe8eeff, 0.30);
+  fill.position.set(-state.W*0.4, 7, -state.H*0.5); scene.add(fill);
+  for (let i=0;i<3;i++){
+    const p=new THREE.PointLight(0xffe4bf, 0.35, 14);
+    p.position.set(state.W*(0.25+i*0.28), 2.7, state.H*0.4); scene.add(p);
+  }
+
+  const o = getOutline();
+  const pts = o.pts;
+  const cx = pts.reduce((s,p)=>s+p[0],0)/pts.length;
+  const cz = pts.reduce((s,p)=>s+p[1],0)/pts.length;
+
+  // --- SUELO: goma negra con motas ---
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length;i++) shape.lineTo(pts[i][0], pts[i][1]);
+  shape.closePath();
+  const floorGeo = new THREE.ShapeGeometry(shape);
+  floorGeo.rotateX(Math.PI/2);
+  floorGeo.computeVertexNormals();
+  const floorMat = new THREE.MeshStandardMaterial({ color:0x18181a, roughness:0.85, metalness:0.08, side:THREE.DoubleSide });
+  try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0xffffff); } catch(e){}
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const grid = new THREE.GridHelper(Math.max(state.W,state.H)*1.4, Math.round(Math.max(state.W,state.H)*1.4), 0x2a2a2a, 0x1e1e1e);
+  grid.position.set(cx, 0.003, cz);
+  grid.material.opacity=0.15; grid.material.transparent=true;
+  scene.add(grid);
+
+  // --- PAREDES: microcemento claro, medianera izquierda en BURDEOS de acento ---
+  const cementTex = cementTexture("#c9c6c0");
+  for (let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
+    if (len<0.01) continue;
+    const midY = (a[1]+b[1])/2, midX=(a[0]+b[0])/2;
+    const isGlass = state.shape==="cuna" && midY > state.H*0.45 && (a[0]>state.W*0.05 || b[0]>state.W*0.05) && (a[0]>0.02 && b[0]>0.02);
+    // pared de acento ROJA: la pared del fondo del BAÑO/ALMACÉN (tramo superior izquierdo, y≈0)
+    const isAccent = !isGlass && midY < state.H*0.05 && midX < state.W*0.55;
+    const h = isGlass ? GLASS_H : WALL_H;
+    const geo = new THREE.PlaneGeometry(len, h);
+    let mat;
+    if (isGlass){
+      mat = new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.10, roughness:0.02, metalness:0, side:THREE.DoubleSide, depthWrite:false });
+    } else if (isAccent){
+      mat = new THREE.MeshStandardMaterial({ color:0xb64a54, roughness:0.9, metalness:0.02, side:THREE.DoubleSide });
+    } else {
+      const t=cementTex.clone(); t.needsUpdate=true; t.repeat.set(Math.max(1,len/2),1);
+      mat = new THREE.MeshStandardMaterial({ map:t, color:0xcfccc6, roughness:0.95, metalness:0.02, side:THREE.DoubleSide });
+    }
+    const wall = new THREE.Mesh(geo, mat);
+    wall.position.set(midX, h/2, (a[1]+b[1])/2);
+    wall.rotation.y = -Math.atan2(dz, dx);
+    if (!isGlass) wall.receiveShadow = true;
+    scene.add(wall);
+  }
+
+  // --- MÁQUINAS (estructura real: postes y huecos, no cajas macizas) ---
+  for (const it of state.items){
+    if (it.shape === "line") continue;         // cristalera de línea: no es objeto
+    const grp = buildMachine(it);
+    grp.position.set(it.x, it.elev||0, it.y);
+    grp.rotation.y = -(it.ang||0)*Math.PI/180;
+    grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    scene.add(grp);
+  }
+
+  // cámara inicial: vista aérea en ángulo
+  const radius = Math.max(state.W, state.H) * 1.15;
+  R3.orbit = { theta: Math.PI*0.5, phi: Math.PI*0.32, r: radius, tx:cx, ty:0, tz:cz };
+  applyCam(cam);
+
+  R3.scene=scene; R3.cam=cam; R3.renderer=renderer;
+  attachControls(renderer.domElement, cam);
+
+  cancelAnimationFrame(R3.raf);
+  (function loop(){ R3.raf = requestAnimationFrame(loop); renderer.render(scene, cam); })();
+}
+
+function applyCam(cam){
+  const o = R3.orbit;
+  cam.position.set(
+    o.tx + o.r*Math.sin(o.phi)*Math.cos(o.theta),
+    o.ty + o.r*Math.cos(o.phi),
+    o.tz + o.r*Math.sin(o.phi)*Math.sin(o.theta)
+  );
+  cam.lookAt(o.tx, o.ty, o.tz);
+}
+
+// controles orbit propios (ratón + táctil), sin dependencias externas
+function attachControls(dom, cam){
+  let mode=null, lx=0, ly=0, ld=0, lcx=0, lcy=0;
+  const dist=(t)=>Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
+  const mid=(t)=>[(t[0].clientX+t[1].clientX)/2,(t[0].clientY+t[1].clientY)/2];
+
+  function pan(dx, dy){
+    const o=R3.orbit, s=o.r*0.0022;
+    // desplazamiento en el plano de la cámara
+    o.tx += (-dx*Math.sin(o.theta) - dy*Math.cos(o.theta)*Math.cos(o.phi))*s;
+    o.tz += ( dx*Math.cos(o.theta) - dy*Math.sin(o.theta)*Math.cos(o.phi))*s;
+  }
+  function rotate(dx, dy){
+    const o=R3.orbit;
+    o.theta -= dx*0.006;
+    o.phi = Math.max(0.08, Math.min(Math.PI*0.495, o.phi - dy*0.005));
+  }
+  function zoom(factor){
+    R3.orbit.r = Math.max(1.5, Math.min(80, R3.orbit.r*factor));
+  }
+
+  // --- ratón ---
+  dom.onpointerdown = e=>{
+    if (e.pointerType==="touch") return;             // el táctil lo maneja touch*
+    mode = (e.button===2 || e.shiftKey) ? "pan" : "rot";
+    lx=e.clientX; ly=e.clientY; dom.setPointerCapture(e.pointerId);
+  };
+  dom.onpointermove = e=>{
+    if(!mode || e.pointerType==="touch") return;
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
+    applyCam(cam);
+  };
+  dom.onpointerup = ()=>{ mode=null; };
+  dom.oncontextmenu = e=>e.preventDefault();
+  dom.onwheel = e=>{ e.preventDefault(); zoom(1 + Math.sign(e.deltaY)*0.08); applyCam(cam); };
+
+  // --- táctil: 1 dedo = rotar · 2 dedos = zoom + pan ---
+  dom.addEventListener("touchstart", e=>{
+    if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+    else if(e.touches.length===2){ mode="multi"; ld=dist(e.touches); const m=mid(e.touches); lcx=m[0]; lcy=m[1]; }
+  }, {passive:true});
+  dom.addEventListener("touchmove", e=>{
+    if(mode==="rot" && e.touches.length===1){
+      const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
+      rotate(dx,dy); applyCam(cam); e.preventDefault();
+    } else if(mode==="multi" && e.touches.length===2){
+      const d=dist(e.touches); if(ld) zoom(ld/d); ld=d;
+      const m=mid(e.touches); pan(m[0]-lcx, m[1]-lcy); lcx=m[0]; lcy=m[1];
+      applyCam(cam); e.preventDefault();
+    }
+  }, {passive:false});
+  dom.addEventListener("touchend", e=>{ if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
+}
+
+function toggle3D(){
+  R3.on = !R3.on;
+  const v3 = document.getElementById("view3d");
+  const w2 = document.querySelector(".wrap");
+  const btn = document.getElementById("btn3d");
+  if (R3.on){
+    v3.style.display = "block";
+    w2.style.display = "none";
+    btn.textContent = "Ver en 2D";
+    if (typeof THREE === "undefined"){ v3.innerHTML = '<div style="color:#e06666;padding:20px">No se pudo cargar el motor 3D (sin conexión?). Reintenta con internet.</div>'; return; }
+    build3D();
+  } else {
+    v3.style.display = "none";
+    w2.style.display = "flex";
+    btn.textContent = "Ver en 3D";
+    cancelAnimationFrame(R3.raf);
+  }
+}
+window.addEventListener("resize", ()=>{ if(R3.on && R3.renderer){ const h=document.getElementById("view3d"); R3.cam.aspect=h.clientWidth/h.clientHeight; R3.cam.updateProjectionMatrix(); R3.renderer.setSize(h.clientWidth,h.clientHeight); } });
+
+load(); buildPalettes(); syncInputs(); render();
+</script>
+</body>
+</html>
