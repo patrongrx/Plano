@@ -187,11 +187,13 @@ const PAL = {
     ["Barra cargada", 0.45, 2.20, "#c9a24b"]
   ],
   palZonas: [
-    ["Tarima PM 0.5×2", 0.50, 2.00, "#8a6d3b", "rect"],
-    ["Tarima PM 1×2", 1.00, 2.00, "#8a6d3b", "rect"],
+    ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
+    ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
     ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
     ["Columna Ø50", 0.50, 0.50, "#333b44", "circle"],
+    ["Entrada (cubículo)", 1.00, 1.00, "#9c8a6a", "rect"],
+    ["Entrada baño", 1.50, 2.15, "#9c8a6a", "rect"],
     ["Espejo pared", 1.90, 0.05, "#afd0d8", "rect"],
     ["Cristalera (línea 1 m)", 1.00, 0.05, "#7fd4e8", "line"]
   ]
@@ -663,6 +665,8 @@ const GLB_MAP = [
   ["barra olimpica","models/barra_olimpica.glb"],
   ["tarima pm",   "models/tarima.glb"],
   ["espejo",      "models/espejo.glb"],
+  ["entrada baño","models/entrada_bano.glb"],
+  ["entrada (cub","models/entrada.glb"],
   ["dk-701",      "models/DK701.glb"],
   ["dk701",       "models/DK701.glb"],
   ["bici",        "models/DK701.glb"],
@@ -774,14 +778,14 @@ function build3D(){
   if (R3.renderer){ host.removeChild(R3.renderer.domElement); R3.renderer.dispose(); }
   const W = host.clientWidth, H = host.clientHeight;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xe8e6e2);
-  scene.fog = new THREE.Fog(0xe8e6e2, 26, 60);
+  scene.background = new THREE.Color(0xbfc2c6);
+  scene.fog = new THREE.Fog(0xbfc2c6, 30, 70);
   const cam = new THREE.PerspectiveCamera(50, W/H, 0.1, 200);
   const renderer = new THREE.WebGLRenderer({ antialias:true });
   renderer.setSize(W, H); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15; }
+  if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95; }
   if ("outputEncoding" in renderer && THREE.sRGBEncoding!==undefined) renderer.outputEncoding = THREE.sRGBEncoding;
   host.appendChild(renderer.domElement);
 
@@ -801,7 +805,7 @@ function build3D(){
   }
 
   // --- Iluminación cálida tipo foco de carril ---
-  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x50504e, 0.85));
+  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x3a3a38, 0.55));
   const key = new THREE.DirectionalLight(0xfff1e0, 1.25);
   key.position.set(state.W*0.6, 12, state.H*0.15);
   key.castShadow = true;
@@ -830,8 +834,8 @@ function build3D(){
   const floorGeo = new THREE.ShapeGeometry(shape);
   floorGeo.rotateX(Math.PI/2);
   floorGeo.computeVertexNormals();
-  const floorMat = new THREE.MeshStandardMaterial({ color:0x18181a, roughness:0.85, metalness:0.08, side:THREE.DoubleSide });
-  try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0xffffff); } catch(e){}
+  const floorMat = new THREE.MeshStandardMaterial({ color:0x2b2b2e, roughness:0.9, metalness:0.05, side:THREE.DoubleSide });
+  try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0x6a6a6e); } catch(e){}
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.receiveShadow = true;
   scene.add(floor);
