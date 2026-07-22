@@ -33,10 +33,13 @@
   #stats b{ color:var(--gold); }
   #selInfo{ font-size:11px; color:#9aa3ad; min-height:16px; margin-bottom:4px; }
   svg{ display:block; margin:0 auto; max-width:100%; max-height:calc(100vh - 210px); height:auto; background:#1b2330; border:1px solid var(--gold); border-radius:8px; touch-action:none; }
+  .v3btn{ width:auto; padding:6px 10px; font-size:11px; background:rgba(20,24,30,.85); color:#e8e6e0; border:1px solid #3a4450; border-radius:6px; cursor:pointer; }
+  .v3btn:hover{ background:#d4af37; color:#111; }
   .item{ cursor:grab; touch-action:none; }
   .item.sel{ cursor:grabbing; }
   .item rect,.item ellipse,.item polygon{ stroke:#000; stroke-width:.03; }
   .item.out rect,.item.out ellipse,.item.out polygon{ stroke:#ff4040; stroke-width:.09; }
+  .item.narrow rect,.item.narrow ellipse,.item.narrow polygon{ stroke:#ffa640; stroke-width:.07; stroke-dasharray:.12 .08; }
   .item text{ fill:#111; font-size:.32px; font-weight:bold; text-anchor:middle; pointer-events:none; }
   .item.sel rect,.item.sel ellipse,.item.sel polygon,.item.sel line{ stroke:#fff; stroke-width:.07; stroke-dasharray:.15 .1; }
   .lbl{ fill:#6b7480; font-size:.38px; letter-spacing:.05px; }
@@ -143,7 +146,14 @@
 
 <div id="view3d" style="display:none;position:fixed;inset:52px 0 0 0;background:#0b0e11;">
   <div style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;">
-    1 dedo / arrastrar = girar · 2 dedos = zoom y mover · rueda = zoom · Shift+arrastrar = desplazar
+    1 dedo = girar · 2 dedos = zoom/mover · rueda = zoom · Shift+arrastrar = desplazar
+  </div>
+  <div style="position:absolute;top:10px;right:10px;z-index:6;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+    <button onclick="setView('planta')" class="v3btn">Planta</button>
+    <button onclick="setView('iso')" class="v3btn">Iso</button>
+    <button onclick="setView('frontal')" class="v3btn">Frontal</button>
+    <button onclick="toggleWalls()" id="wallBtn" class="v3btn">Paredes: auto</button>
+    <button onclick="toggleZoneColors()" id="zoneBtn" class="v3btn">Colores zona</button>
   </div>
 </div>
 
@@ -326,6 +336,25 @@ function inside(x,y,pts){
   }
   return inp;
 }
+
+// Distancia mínima aproximada entre dos piezas (rectángulos con holgura)
+function gapBetween(a,b){
+  const dx = Math.abs(a.x-b.x) - (a.w+b.w)/2;
+  const dy = Math.abs(a.y-b.y) - (a.h+b.h)/2;
+  if (dx>=0 && dy>=0) return Math.hypot(dx,dy);
+  return Math.max(dx,dy);   // negativo = solapan
+}
+const MIN_PASILLO = 0.80;   // metros de circulación mínima
+function tightPairs(items){
+  const pairs=[];
+  const list = items.filter(i=>i.shape!=="line" && !/espejo|cristalera|tarima/i.test(i.name||""));
+  for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+    const g = gapBetween(list[i],list[j]);
+    if (g < MIN_PASILLO) pairs.push([list[i].id, list[j].id, g]);
+  }
+  return pairs;
+}
+
 function corners(it){
   const a = (it.ang||0)*Math.PI/180, cx=it.x, cy=it.y;
   const hw=it.w/2, hh=it.h/2, cos=Math.cos(a), sin=Math.sin(a);
@@ -473,11 +502,14 @@ function render(full=true){
     g += `<text class="lbl" x="${0.05*W}" y="-0.15">baño/almacén en esta esquina ↑</text>`;
   }
   let occ = 0, out = 0;
+  const tight = tightPairs(state.items);
+  const tightIds = new Set(); tight.forEach(p=>{ tightIds.add(p[0]); tightIds.add(p[1]); });
   for (const it of state.items){
     const bad = isOut(it, o.pts);
+    const narrow = tightIds.has(it.id);
     if (bad) out++;
     if (it.shape !== "line") occ += it.w*it.h;
-    const cls = "item" + (bad?" out":"") + (it.id===selId?" sel":"");
+    const cls = "item" + (bad?" out":"") + (narrow?" narrow":"") + (it.id===selId?" sel":"");
     const tr = `transform="translate(${it.x} ${it.y}) rotate(${it.ang||0})"`;
     const ev = `data-id="${it.id}" onpointerdown="startDrag(event,${it.id})"`;
     if (it.shape === "circle"){
@@ -496,7 +528,8 @@ function render(full=true){
   svg.innerHTML = g;
   document.getElementById("stats").innerHTML =
     `Local: <b>${areaLocal.toFixed(1)} m²</b> · Ocupado: <b>${occ.toFixed(1)} m²</b> (${(100*occ/areaLocal).toFixed(0)}%) · Piezas: ${state.items.length}` +
-    (out?` · <span style="color:#ff4040">${out} fuera del local</span>`:"");
+    (out?` · <span style="color:#ff4040">${out} fuera del local</span>`:"") +
+    (tight.length?` · <span style="color:#ffa640">${tightIds.size} piezas con pasillo &lt;${MIN_PASILLO} m</span>`:"");
   const it = getSel();
   document.getElementById("selInfo").textContent = it ? `Seleccionada: ${it.name} — ${it.w.toFixed(2)}×${it.h.toFixed(2)} m · ${it.ang||0}°` : "Toca una pieza de la paleta para añadirla · arrastra para mover · selecciona para editar";
   if (full && it){
@@ -537,6 +570,7 @@ function itemHeight(name){
   if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
   if (n.includes("bici")||n.includes("dk-701")) return 1.00;
   if (n.includes("tarima pm")) return 0.07;
+  if (n.includes("entrada")) return 2.80;   // cubículo entrada / baño: hasta el techo
   if (n.includes("espejo")) return 1.13;
   if (n.includes("barra cargada")) return 0.45;
   if (n.includes("barra olímpica")||n.includes("barra olimpica")) return 0.05;
@@ -553,7 +587,7 @@ function itemHeight(name){
   return 1.20;
 }
 const WALL_H = 2.8, GLASS_H = 2.6;
-let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null };
+let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null, walls:[], pieces:[], wallMode:'auto', zoneColors:false };
 
 function hexToInt(c){ return parseInt((c||"#888888").replace("#",""),16); }
 
@@ -774,6 +808,7 @@ function buildMachine(it){
 
 function build3D(){
   const host = document.getElementById("view3d");
+  R3.walls = []; R3.pieces = [];
   // limpiar render previo
   if (R3.renderer){ host.removeChild(R3.renderer.domElement); R3.renderer.dispose(); }
   const W = host.clientWidth, H = host.clientHeight;
@@ -834,7 +869,7 @@ function build3D(){
   const floorGeo = new THREE.ShapeGeometry(shape);
   floorGeo.rotateX(Math.PI/2);
   floorGeo.computeVertexNormals();
-  const floorMat = new THREE.MeshStandardMaterial({ color:0x2b2b2e, roughness:0.9, metalness:0.05, side:THREE.DoubleSide });
+  const floorMat = new THREE.MeshStandardMaterial({ color:0x2b2b2e, roughness:0.55, metalness:0.25, side:THREE.DoubleSide });
   try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0x6a6a6e); } catch(e){}
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.receiveShadow = true;
@@ -870,6 +905,8 @@ function build3D(){
     wall.position.set(midX, h/2, (a[1]+b[1])/2);
     wall.rotation.y = -Math.atan2(dz, dx);
     if (!isGlass) wall.receiveShadow = true;
+    wall.userData.isGlass = isGlass;
+    R3.walls.push(wall);
     scene.add(wall);
   }
 
@@ -880,6 +917,8 @@ function build3D(){
     grp.position.set(it.x, it.elev||0, it.y);
     grp.rotation.y = -(it.ang||0)*Math.PI/180;
     grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+    grp.userData.item = it;
+    R3.pieces.push(grp);
     scene.add(grp);
   }
 
@@ -890,6 +929,7 @@ function build3D(){
 
   R3.scene=scene; R3.cam=cam; R3.renderer=renderer;
   attachControls(renderer.domElement, cam);
+  updateWalls();
 
   cancelAnimationFrame(R3.raf);
   (function loop(){ R3.raf = requestAnimationFrame(loop); renderer.render(scene, cam); })();
@@ -936,7 +976,7 @@ function attachControls(dom, cam){
     if(!mode || e.pointerType==="touch") return;
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
     if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
-    applyCam(cam);
+    applyCam(cam); updateWalls();
   };
   dom.onpointerup = ()=>{ mode=null; };
   dom.oncontextmenu = e=>e.preventDefault();
@@ -950,7 +990,7 @@ function attachControls(dom, cam){
   dom.addEventListener("touchmove", e=>{
     if(mode==="rot" && e.touches.length===1){
       const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
-      rotate(dx,dy); applyCam(cam); e.preventDefault();
+      rotate(dx,dy); applyCam(cam); updateWalls(); e.preventDefault();
     } else if(mode==="multi" && e.touches.length===2){
       const d=dist(e.touches); if(ld) zoom(ld/d); ld=d;
       const m=mid(e.touches); pan(m[0]-lcx, m[1]-lcy); lcx=m[0]; lcy=m[1];
@@ -958,6 +998,69 @@ function attachControls(dom, cam){
     }
   }, {passive:false});
   dom.addEventListener("touchend", e=>{ if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
+}
+
+
+/* ===== Vistas predefinidas, paredes transparentes y colores por zona ===== */
+function setView(kind){
+  if(!R3.on || !R3.cam) return;
+  const o=R3.orbit, rad=Math.max(state.W,state.H);
+  if(kind==="planta"){ o.phi=0.10; o.theta=Math.PI*0.5; o.r=rad*1.25; }
+  else if(kind==="iso"){ o.phi=Math.PI*0.30; o.theta=Math.PI*0.55; o.r=rad*1.15; }
+  else if(kind==="frontal"){ o.phi=Math.PI*0.46; o.theta=Math.PI*0.5; o.r=rad*1.35; }
+  applyCam(R3.cam);
+}
+
+// Paredes: auto (se ocultan las que tapan) / visibles / ocultas
+function toggleWalls(){
+  const modes=["auto","visibles","ocultas"];
+  R3.wallMode = modes[(modes.indexOf(R3.wallMode)+1)%modes.length];
+  const b=document.getElementById("wallBtn"); if(b) b.textContent="Paredes: "+R3.wallMode;
+  updateWalls();
+}
+function updateWalls(){
+  if(!R3.walls.length || !R3.cam) return;
+  for(const w of R3.walls){
+    if(R3.wallMode==="ocultas"){ w.visible=false; continue; }
+    if(R3.wallMode==="visibles"){ w.visible=true; w.material.opacity=w.userData.isGlass?0.16:1; w.material.transparent=w.userData.isGlass; continue; }
+    // auto: la pared se difumina si está entre la cámara y el centro
+    w.visible=true;
+    const toCam=new THREE.Vector3().subVectors(R3.cam.position, w.position).normalize();
+    const n=new THREE.Vector3(0,0,1).applyQuaternion(w.quaternion);
+    const facing=n.dot(toCam);
+    const hide = facing < -0.15;      // pared de espaldas a la cámara => tapa la vista
+    w.material.transparent = true;
+    w.material.opacity = w.userData.isGlass ? 0.16 : (hide ? 0.12 : 1.0);
+    w.material.depthWrite = !hide;
+  }
+}
+
+// Colores por zona: fuerza / cardio / accesorios / obra
+function zoneColorOf(name){
+  const n=(name||"").toLowerCase();
+  if(/cinta|bici|airbike|ski|dk-?7|dk-?6/.test(n)) return 0x3fa9f5;                 // cardio azul
+  if(/smith|df25|rack unistrength|jaula|titanium|barra|tarima/.test(n)) return 0xd4af37; // fuerza libre dorado
+  if(/ds02|ds19|dh30|dh91|dh98|jalón|jalon|remo|hip|belt|abd/.test(n)) return 0x6ac46a;  // máquinas verde
+  if(/mancuern|árbol|arbol|cambia|banco|búlgara|bulgara|df36|df62|df64|df65|db21|db81/.test(n)) return 0xe08a3c; // accesorios naranja
+  if(/espejo|columna|entrada|baño|cristalera/.test(n)) return 0x9aa3ad;             // obra gris
+  return 0xcccccc;
+}
+function toggleZoneColors(){
+  R3.zoneColors=!R3.zoneColors;
+  const b=document.getElementById("zoneBtn"); if(b) b.textContent = R3.zoneColors? "Color real":"Colores zona";
+  for(const grp of R3.pieces){
+    const it=grp.userData.item; if(!it) continue;
+    const col=zoneColorOf(it.name);
+    grp.traverse(o=>{
+      if(!o.isMesh) return;
+      if(R3.zoneColors){
+        if(!o.userData._origMat) o.userData._origMat=o.material;
+        o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:0.1});
+      } else if(o.userData._origMat){
+        o.material=o.userData._origMat;
+      }
+    });
+  }
 }
 
 function toggle3D(){
