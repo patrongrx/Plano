@@ -128,6 +128,15 @@
       <div><label>Ángulo (°)</label><input type="number" id="selA" step="1" onchange="editSel('ang',this.value)"></div>
       <div><label>Altura suelo (m)</label><input type="number" id="selE" step="0.05" min="0" onchange="editSel('elev',this.value)" title="Eleva la pieza en el 3D (para barras sobre el rack)"></div>
     </div>
+    <div class="row" style="max-width:560px;align-items:center;gap:10px;margin-top:6px">
+      <div style="flex:0 0 auto"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="haloOn" onchange="render()" style="width:auto;margin:0"> Zona de trabajo
+      </label></div>
+      <div style="flex:0 0 auto"><button onclick="toggleMeasure()" id="measBtn" style="width:auto;padding:6px 12px">📏 Medir</button></div>
+      <div style="flex:1"><label>Margen circulación: <b id="haloVal">0.80</b> m</label>
+        <input type="range" id="haloM" min="0.3" max="1.5" step="0.1" value="0.8" oninput="document.getElementById('haloVal').textContent=(+this.value).toFixed(2); render();" style="width:100%">
+      </div>
+    </div>
     <div class="row" style="max-width:560px">
       <button onclick="rot(15)">↻ 15°</button>
       <button onclick="rot(90)">↻ 90°</button>
@@ -155,6 +164,7 @@
     <button onclick="toggleWalls()" id="wallBtn" class="v3btn">Paredes: auto</button>
     <button onclick="toggleZoneColors()" id="zoneBtn" class="v3btn">Colores zona</button>
     <button onclick="toggleCeiling()" id="ceilBtn" class="v3btn">Techo: auto</button>
+    <button onclick="exportPNG()" class="v3btn" title="Descargar imagen del render">📷 Imagen</button>
   </div>
 </div>
 
@@ -338,6 +348,54 @@ function inside(x,y,pts){
   return inp;
 }
 
+
+
+// ===== Herramienta de medir =====
+let measureMode=false, measurePts=[];
+function toggleMeasure(){
+  measureMode=!measureMode; measurePts=[];
+  const b=document.getElementById("measBtn");
+  if(b){ b.textContent = measureMode? "📏 Medir: ON" : "📏 Medir"; b.style.background = measureMode? "#d4af37":""; b.style.color = measureMode? "#111":""; }
+  document.getElementById("svg").style.cursor = measureMode? "crosshair":"";
+  render();
+}
+function measureClick(ev){
+  if(!measureMode) return;
+  const p = svgPoint(ev);
+  measurePts.push([p.x, p.y]);
+  if(measurePts.length>2) measurePts=[[p.x,p.y]];
+  render();
+}
+function measureSVG(){
+  if(!measureMode || !measurePts.length) return "";
+  let out="";
+  for(const p of measurePts){
+    out += `<circle cx="${p[0]}" cy="${p[1]}" r="0.09" fill="#d4af37" stroke="#000" stroke-width="0.02"/>`;
+  }
+  if(measurePts.length===2){
+    const [a,b]=measurePts;
+    const d=Math.hypot(b[0]-a[0], b[1]-a[1]);
+    const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;
+    out += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#d4af37" stroke-width="0.05" stroke-dasharray="0.15 0.1"/>`;
+    out += `<rect x="${mx-0.45}" y="${my-0.30}" width="0.9" height="0.42" rx="0.08" fill="#000" fill-opacity="0.75"/>`;
+    out += `<text x="${mx}" y="${my}" style="fill:#d4af37;font-size:.30px;font-weight:bold" text-anchor="middle">${d.toFixed(2)} m</text>`;
+  }
+  return out;
+}
+
+// ===== Zona de trabajo (halo) por pieza =====
+// Casi todo "se trabaja dentro": halo = footprint + margen de circulación.
+// Excepción: racks de mancuernas y árboles de discos necesitan frente amplio.
+function haloFor(it, margen){
+  const n=(it.name||"").toLowerCase();
+  if(/espejo|cristalera|columna|entrada|baño|almac/.test(n)) return null;   // obra: sin halo
+  let mx = margen, my = margen;
+  if(/df62|rack mancuernas|árbol|arbol|df64|df65|cambia|db21/.test(n)){
+    my = Math.max(margen, 1.5);          // frente amplio para coger material
+  }
+  return { w: it.w + mx*2, h: it.h + my*2 };
+}
+
 // Distancia mínima aproximada entre dos piezas (rectángulos con holgura)
 function gapBetween(a,b){
   const dx = Math.abs(a.x-b.x) - (a.w+b.w)/2;
@@ -345,7 +403,7 @@ function gapBetween(a,b){
   if (dx>=0 && dy>=0) return Math.hypot(dx,dy);
   return Math.max(dx,dy);   // negativo = solapan
 }
-const MIN_PASILLO = 0.80;   // metros de circulación mínima
+let MIN_PASILLO = 0.80;   // metros de circulación mínima (ajustable con el deslizador)
 function tightPairs(items){
   const pairs=[];
   const list = items.filter(i=>i.shape!=="line" && !/espejo|cristalera|tarima/i.test(i.name||""));
@@ -449,6 +507,7 @@ function svgPoint(ev){
   return pt.matrixTransform(svg.getScreenCTM().inverse());
 }
 function startDrag(ev,id){
+  if(measureMode) return;
   ev.preventDefault();
   ev.stopPropagation();
   selId = id;
@@ -503,6 +562,21 @@ function render(full=true){
     g += `<text class="lbl" x="${0.05*W}" y="-0.15">baño/almacén en esta esquina ↑</text>`;
   }
   let occ = 0, out = 0;
+  // --- halos de zona de trabajo (se dibujan primero, debajo de las piezas) ---
+  const haloEl = document.getElementById("haloOn");
+  const showHalo = haloEl && haloEl.checked;
+  const margen = +((document.getElementById("haloM")||{}).value || 0.8);
+  if (showHalo){
+    for (const it of state.items){
+      if (it.shape === "line") continue;
+      const hz = haloFor(it, margen);
+      if (!hz) continue;
+      g += `<g transform="translate(${it.x} ${it.y}) rotate(${it.ang||0})">` +
+           `<rect x="${-hz.w/2}" y="${-hz.h/2}" width="${hz.w}" height="${hz.h}" rx="0.10" ` +
+           `fill="#4ea3ff" fill-opacity="0.13" stroke="#4ea3ff" stroke-opacity="0.45" stroke-width="0.03" stroke-dasharray="0.18 0.12"/></g>`;
+    }
+  }
+  MIN_PASILLO = margen;
   const tight = tightPairs(state.items);
   const tightIds = new Set(); tight.forEach(p=>{ tightIds.add(p[0]); tightIds.add(p[1]); });
   for (const it of state.items){
@@ -526,6 +600,7 @@ function render(full=true){
            (showLbl?`<text y="0.05">${it.name}</text><text y="0.4" style="font-size:.24px">${it.w.toFixed(2)}×${it.h.toFixed(2)}</text>`:"") + `</g>`;
     }
   }
+  g += measureSVG();
   svg.innerHTML = g;
   document.getElementById("stats").innerHTML =
     `Local: <b>${areaLocal.toFixed(1)} m²</b> · Ocupado: <b>${occ.toFixed(1)} m²</b> (${(100*occ/areaLocal).toFixed(0)}%) · Piezas: ${state.items.length}` +
@@ -550,6 +625,7 @@ function setZoom(v){
 document.getElementById("inW").addEventListener("change", e=>{ state.W=+e.target.value||9; save(); render(); });
 document.getElementById("inH").addEventListener("change", e=>{ state.H=+e.target.value||12; save(); render(); });
 document.getElementById("inShape").addEventListener("change", e=>{ state.shape=e.target.value; save(); render(); });
+document.getElementById("svg").addEventListener("pointerdown", e=>{ if(measureMode){ e.preventDefault(); e.stopPropagation(); measureClick(e); } }, true);
 window.addEventListener("pointermove", moveDrag, {passive:false});
 window.addEventListener("pointerup", endDrag);
 window.addEventListener("pointercancel", endDrag);
@@ -817,7 +893,7 @@ function build3D(){
   scene.background = new THREE.Color(0xbfc2c6);
   scene.fog = new THREE.Fog(0xbfc2c6, 30, 70);
   const cam = new THREE.PerspectiveCamera(50, W/H, 0.1, 200);
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
   renderer.setSize(W, H); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1168,6 +1244,20 @@ function updateCeiling(){
   if(R3.ceilMode==="oculto"){ R3.ceiling.visible=false; return; }
   // auto: visible sólo cuando la cámara está baja (vista de interior), oculto en cenital
   R3.ceiling.visible = (R3.orbit && R3.orbit.phi > 0.75);
+}
+
+
+// Exportar el render 3D como PNG (para dossier/plan de negocio)
+function exportPNG(){
+  if(!R3.renderer || !R3.scene || !R3.cam) return;
+  R3.renderer.render(R3.scene, R3.cam);           // asegurar frame actual
+  try{
+    const url = R3.renderer.domElement.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "patron_strength_render.png";
+    document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ alert("No se pudo exportar la imagen: "+e.message); }
 }
 
 function toggle3D(){
