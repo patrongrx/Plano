@@ -154,6 +154,7 @@
     <button onclick="setView('frontal')" class="v3btn">Frontal</button>
     <button onclick="toggleWalls()" id="wallBtn" class="v3btn">Paredes: auto</button>
     <button onclick="toggleZoneColors()" id="zoneBtn" class="v3btn">Colores zona</button>
+    <button onclick="toggleCeiling()" id="ceilBtn" class="v3btn">Techo: auto</button>
   </div>
 </div>
 
@@ -587,7 +588,7 @@ function itemHeight(name){
   return 1.20;
 }
 const WALL_H = 2.8, GLASS_H = 2.6;
-let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null, walls:[], pieces:[], wallMode:'auto', zoneColors:false };
+let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null, walls:[], pieces:[], wallMode:'auto', zoneColors:false, ceiling:null, ceilMode:'auto' };
 
 function hexToInt(c){ return parseInt((c||"#888888").replace("#",""),16); }
 
@@ -910,6 +911,84 @@ function build3D(){
     scene.add(wall);
   }
 
+
+  // ================= TECHO (hormigón visto + vigas + carriles de focos + LED perimetral) =================
+  R3.ceiling = new THREE.Group();
+  {
+    const CH = WALL_H;                       // altura del techo
+    // --- Losa de hormigón (misma forma que el suelo) ---
+    const slabGeo = new THREE.ShapeGeometry(shape);
+    slabGeo.rotateX(Math.PI/2);              // igual que el suelo (orientación correcta)
+    slabGeo.computeVertexNormals();
+    const slabMat = new THREE.MeshStandardMaterial({ color:0xb9b7b2, roughness:0.95, metalness:0.02, side:THREE.DoubleSide });
+    try { const ct=cementTexture("#bab8b3"); ct.repeat.set(state.W/2, state.H/2); slabMat.map=ct; slabMat.color.set(0xffffff); } catch(e){}
+    const slab = new THREE.Mesh(slabGeo, slabMat);
+    slab.position.y = CH;                    // solo subir a la altura del techo
+    R3.ceiling.add(slab);
+
+    // --- Vigas transversales de hormigón ---
+    const beamMat = new THREE.MeshStandardMaterial({ color:0xc2c0bb, roughness:0.95, metalness:0.02 });
+    const nBeams = Math.max(3, Math.round(state.H/2.2));
+    for (let i=1;i<nBeams;i++){
+      const zz = (state.H/nBeams)*i;
+      // ancho real del local a esa profundidad: buscar cruces del contorno
+      let xmin=1e9, xmax=-1e9;
+      for(let k=0;k<pts.length;k++){
+        const p1=pts[k], p2=pts[(k+1)%pts.length];
+        if((p1[1]-zz)*(p2[1]-zz) <= 0 && Math.abs(p2[1]-p1[1])>1e-6){
+          const t=(zz-p1[1])/(p2[1]-p1[1]);
+          const xi=p1[0]+t*(p2[0]-p1[0]);
+          xmin=Math.min(xmin,xi); xmax=Math.max(xmax,xi);
+        }
+      }
+      if(xmax<=xmin) continue;
+      const len = xmax-xmin;
+      const bm = new THREE.Mesh(new THREE.BoxGeometry(len, 0.26, 0.28), beamMat);
+      bm.position.set((xmin+xmax)/2, CH-0.15, zz);
+      bm.receiveShadow = true;
+      R3.ceiling.add(bm);
+    }
+
+    // --- Carriles de focos (rail negro + focos blancos) ---
+    const railMat  = new THREE.MeshStandardMaterial({ color:0x1c1c1e, roughness:0.6, metalness:0.4 });
+    const spotMat  = new THREE.MeshStandardMaterial({ color:0xf2f2f0, roughness:0.4, metalness:0.3 });
+    const emitMat  = new THREE.MeshStandardMaterial({ color:0xffe9c4, emissive:0xffd9a0, emissiveIntensity:1.4, roughness:0.3 });
+    const rails = [state.W*0.30, state.W*0.60];
+    for (const rx of rails){
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, state.H*0.60), railMat);
+      rail.position.set(rx, CH-0.32, state.H*0.45);
+      R3.ceiling.add(rail);
+      const nSpots = 5;
+      for (let i=0;i<nSpots;i++){
+        const zz = state.H*0.45 - state.H*0.30 + (state.H*0.60/(nSpots-1))*i;
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.075,0.17,12), spotMat);
+        body.position.set(rx, CH-0.45, zz);
+        body.rotation.z = 0.32;
+        R3.ceiling.add(body);
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.02,12), emitMat);
+        lens.position.set(rx, CH-0.535, zz);
+        R3.ceiling.add(lens);
+      }
+    }
+
+    // --- Tira LED perimetral cálida (luz indirecta pegada a la pared) ---
+    const ledMat = new THREE.MeshStandardMaterial({ color:0xffe4b8, emissive:0xffcf8a, emissiveIntensity:1.7, roughness:0.4 });
+    for (let i=0;i<pts.length;i++){
+      const a = pts[i], b = pts[(i+1)%pts.length];
+      const dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
+      if (len<0.05) continue;
+      const led = new THREE.Mesh(new THREE.BoxGeometry(len, 0.045, 0.06), ledMat);
+      led.position.set((a[0]+b[0])/2, CH-0.10, (a[1]+b[1])/2);
+      led.rotation.y = -Math.atan2(dz, dx);
+      R3.ceiling.add(led);
+    }
+    // luz real cálida que emula el rebote del LED perimetral
+    const ledLight = new THREE.PointLight(0xffd9a0, 0.45, Math.max(state.W,state.H)*1.4);
+    ledLight.position.set(state.W*0.5, CH-0.35, state.H*0.5);
+    R3.ceiling.add(ledLight);
+  }
+  scene.add(R3.ceiling);
+
   // --- MÁQUINAS (estructura real: postes y huecos, no cajas macizas) ---
   for (const it of state.items){
     if (it.shape === "line") continue;         // cristalera de línea: no es objeto
@@ -929,7 +1008,7 @@ function build3D(){
 
   R3.scene=scene; R3.cam=cam; R3.renderer=renderer;
   attachControls(renderer.domElement, cam);
-  updateWalls();
+  updateWalls(); updateCeiling();
 
   cancelAnimationFrame(R3.raf);
   (function loop(){ R3.raf = requestAnimationFrame(loop); renderer.render(scene, cam); })();
@@ -976,7 +1055,7 @@ function attachControls(dom, cam){
     if(!mode || e.pointerType==="touch") return;
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
     if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
-    applyCam(cam); updateWalls();
+    applyCam(cam); updateWalls(); updateCeiling();
   };
   dom.onpointerup = ()=>{ mode=null; };
   dom.oncontextmenu = e=>e.preventDefault();
@@ -990,7 +1069,7 @@ function attachControls(dom, cam){
   dom.addEventListener("touchmove", e=>{
     if(mode==="rot" && e.touches.length===1){
       const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
-      rotate(dx,dy); applyCam(cam); updateWalls(); e.preventDefault();
+      rotate(dx,dy); applyCam(cam); updateWalls(); updateCeiling(); e.preventDefault();
     } else if(mode==="multi" && e.touches.length===2){
       const d=dist(e.touches); if(ld) zoom(ld/d); ld=d;
       const m=mid(e.touches); pan(m[0]-lcx, m[1]-lcy); lcx=m[0]; lcy=m[1];
@@ -1008,7 +1087,7 @@ function setView(kind){
   if(kind==="planta"){ o.phi=0.10; o.theta=Math.PI*0.5; o.r=rad*1.25; }
   else if(kind==="iso"){ o.phi=Math.PI*0.30; o.theta=Math.PI*0.55; o.r=rad*1.15; }
   else if(kind==="frontal"){ o.phi=Math.PI*0.46; o.theta=Math.PI*0.5; o.r=rad*1.35; }
-  applyCam(R3.cam);
+  applyCam(R3.cam); updateWalls(); updateCeiling();
 }
 
 // Paredes: auto (se ocultan las que tapan) / visibles / ocultas
@@ -1052,15 +1131,43 @@ function toggleZoneColors(){
     const it=grp.userData.item; if(!it) continue;
     const col=zoneColorOf(it.name);
     grp.traverse(o=>{
-      if(!o.isMesh) return;
-      if(R3.zoneColors){
-        if(!o.userData._origMat) o.userData._origMat=o.material;
-        o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.7, metalness:0.1});
-      } else if(o.userData._origMat){
-        o.material=o.userData._origMat;
-      }
+      if(!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material)? o.material : [o.material];
+      mats.forEach(m=>{
+        if(R3.zoneColors){
+          // guardar estado original una sola vez
+          if(!m.userData) m.userData={};
+          if(m.userData._origColor===undefined){
+            m.userData._origColor = m.color? m.color.getHex() : 0xffffff;
+            m.userData._origMap = m.map || null;
+          }
+          m.map = null;                    // quitar textura para que el color se vea puro
+          if(m.color) m.color.setHex(col);
+          m.needsUpdate = true;
+        } else if(m.userData && m.userData._origColor!==undefined){
+          if(m.color) m.color.setHex(m.userData._origColor);
+          m.map = m.userData._origMap;
+          m.needsUpdate = true;
+        }
+      });
     });
   }
+}
+
+
+// Techo: auto (se oculta en vista cenital) / visible / oculto
+function toggleCeiling(){
+  const modes=["auto","visible","oculto"];
+  R3.ceilMode = modes[(modes.indexOf(R3.ceilMode)+1)%modes.length];
+  const b=document.getElementById("ceilBtn"); if(b) b.textContent="Techo: "+R3.ceilMode;
+  updateCeiling();
+}
+function updateCeiling(){
+  if(!R3.ceiling) return;
+  if(R3.ceilMode==="visible"){ R3.ceiling.visible=true; return; }
+  if(R3.ceilMode==="oculto"){ R3.ceiling.visible=false; return; }
+  // auto: visible sólo cuando la cámara está baja (vista de interior), oculto en cenital
+  R3.ceiling.visible = (R3.orbit && R3.orbit.phi > 0.75);
 }
 
 function toggle3D(){
