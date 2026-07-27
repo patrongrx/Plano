@@ -210,10 +210,12 @@ const PAL = {
     ["Rack Unistrength (tuyo)", 1.80, 1.60, "#b07aa1"],
     ["Banco plano (tuyo)", 0.60, 1.25, "#b07aa1"],
     ["Barra olímpica vacía", 0.05, 2.20, "#c9a24b"],
-    ["Barra cargada", 0.45, 2.20, "#c9a24b"]
+    ["Barra cargada", 0.45, 2.20, "#c9a24b"],
+    ["Power Rack rojo", 1.24, 1.60, "#c0392b"]
   ],
   palZonas: [
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
+    ["Césped 3×1", 3.00, 1.00, "#4a7a3a", "rect"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
     ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
@@ -684,6 +686,8 @@ function itemHeight(name){
   if (n.includes("ski")||n.includes("dk-700")) return 2.14;
   if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
   if (n.includes("bici")||n.includes("dk-701")) return 1.00;
+  if (n.includes("power rack rojo")) return 2.30;
+  if (n.includes("césped")||n.includes("cesped")) return 0.03;
   if (n.includes("tarima pm")) return 0.07;
   if (n.includes("entrada")) return 2.80;   // cubículo entrada / baño: hasta el techo
   if (n.includes("espejo")) return 1.13;
@@ -814,6 +818,7 @@ const GLB_MAP = [
   ["barra olimpica","models/barra_olimpica.glb"],
   ["tarima pm",   "models/tarima.glb"],
   ["espejo",      "models/espejo.glb"],
+  ["power rack rojo","models/power_rack_rojo.glb"],
   ["entrada baño","models/entrada_bano.glb"],
   ["entrada (cub","models/entrada.glb"],
   ["dk-701",      "models/DK701.glb"],
@@ -844,6 +849,12 @@ function buildMachine(it){
   if (glb){
     const isBar = n.includes("barra");   // barras: escala uniforme para no deformar los discos
     loadGLB(g, glb, w, d, itemHeight(it.name), isBar);
+    return g;
+  }
+
+  // === Césped: lámina verde fina ===
+  if (n.includes("césped") || n.includes("cesped")){
+    box(g, 0, 0.015, 0, w, 0.03, d, new THREE.MeshStandardMaterial({ color:0x4a7a3a, roughness:0.98, metalness:0 }));
     return g;
   }
 
