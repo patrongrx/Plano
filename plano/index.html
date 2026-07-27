@@ -227,6 +227,52 @@ const PAL = {
   ]
 };
 let state = { W:9, H:12, declared:88, shape:"cuna", items:[] };
+
+// ===== Locales (cada uno guarda su distribución por separado en la nube) =====
+const LOCALES = {
+  portals: { W:9,  H:12, declared:88,  shape:"cuna" },
+  nave:    { W:11, H:14, declared:154, shape:"rect" }
+};
+let currentLocal = "portals";
+let _unsub = null;
+
+function switchLocal(key){
+  if(!LOCALES[key]) return;
+  currentLocal = key;
+  const p = LOCALES[key];
+  // preset base (los items se cargan de la nube por onSnapshot)
+  state = { W:p.W, H:p.H, declared:p.declared, shape:p.shape, items:[] };
+  selId = null; nextId = 1;
+  const sel=document.getElementById("inLocal"); if(sel) sel.value=key;
+  // reconfigurar Firebase al documento de este local
+  if(db){
+    docRef = db.collection("planos").doc(key);
+    if(_unsub){ try{ _unsub(); }catch(e){} }
+    _unsub = docRef.onSnapshot(snap=>{
+      if(snap.exists && snap.data() && snap.data().state){
+        const sv = JSON.parse(snap.data().state);
+        if(sv && Array.isArray(sv.items)){
+          applyingRemote = true;
+          state = sv;
+          nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+          try{ syncInputs(); }catch(e){}
+          render();
+          if(R3.on){ build3D(); }
+          applyingRemote = false;
+          return;
+        }
+      }
+      // documento vacío: dejar preset base
+      try{ syncInputs(); }catch(e){}
+      render();
+      if(R3.on){ build3D(); }
+    }, err=>console.warn("Firestore local:", err));
+  }
+  try{ syncInputs(); }catch(e){}
+  render();
+  if(R3.on){ build3D(); }
+}
+
 let selId = null, nextId = 1;
 
 /* ===== Firebase (nube compartida) ===== */
