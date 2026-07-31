@@ -1071,23 +1071,41 @@ function build3D(){
     // pared de acento ROJA: la pared del fondo del BAÑO/ALMACÉN (tramo superior izquierdo, y≈0)
     const isAccent = false;   // rojo desactivado
     const h = isGlass ? GLASS_H : WALL_H;
-    const geo = new THREE.PlaneGeometry(len, h);
-    let mat;
+    // ¿esta pared lleva banda de ventanas? Solo cara NORTE (fondo, y≈0) y DERECHA (x≈W)
+    const esNorte  = !isGlass && midY < state.H*0.10;
+    const esDerecha= !isGlass && midX > state.W*0.90;
+    const conVentana = (esNorte || esDerecha);
+
+    const ang = -Math.atan2(dz, dx);
+    const cementMat = ()=>{ const t=cementTex.clone(); t.needsUpdate=true; t.repeat.set(Math.max(1,len/2),1);
+      return new THREE.MeshStandardMaterial({ map:t, color:0xcfccc6, roughness:0.95, metalness:0.02, side:THREE.DoubleSide }); };
+
     if (isGlass){
-      mat = new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.10, roughness:0.02, metalness:0, side:THREE.DoubleSide, depthWrite:false });
-    } else if (isAccent){
-      mat = new THREE.MeshStandardMaterial({ color:0xb64a54, roughness:0.9, metalness:0.02, side:THREE.DoubleSide });
+      const geo = new THREE.PlaneGeometry(len, h);
+      const mat = new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.10, roughness:0.02, metalness:0, side:THREE.DoubleSide, depthWrite:false });
+      const wall = new THREE.Mesh(geo, mat);
+      wall.position.set(midX, h/2, (a[1]+b[1])/2); wall.rotation.y=ang;
+      wall.userData.isGlass=true; R3.walls.push(wall); scene.add(wall);
+    } else if (conVentana){
+      // antepecho opaco + franja de cristal (mitad superior) + dintel
+      const sillH=h*0.45, winH=h-sillH-0.12;
+      const cz=(a[1]+b[1])/2;
+      const sill=new THREE.Mesh(new THREE.PlaneGeometry(len,sillH), cementMat());
+      sill.position.set(midX, sillH/2, cz); sill.rotation.y=ang; sill.receiveShadow=true;
+      sill.userData.isGlass=false; R3.walls.push(sill); scene.add(sill);
+      const glass=new THREE.Mesh(new THREE.PlaneGeometry(len,winH), new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.14, roughness:0.05, metalness:0, side:THREE.DoubleSide }));
+      glass.position.set(midX, sillH+winH/2, cz); glass.rotation.y=ang;
+      glass.userData.isGlass=true; R3.walls.push(glass); scene.add(glass);
+      const lintel=new THREE.Mesh(new THREE.PlaneGeometry(len,0.12), cementMat());
+      lintel.position.set(midX, h-0.06, cz); lintel.rotation.y=ang;
+      lintel.userData.isGlass=false; R3.walls.push(lintel); scene.add(lintel);
     } else {
-      const t=cementTex.clone(); t.needsUpdate=true; t.repeat.set(Math.max(1,len/2),1);
-      mat = new THREE.MeshStandardMaterial({ map:t, color:0xcfccc6, roughness:0.95, metalness:0.02, side:THREE.DoubleSide });
+      const geo = new THREE.PlaneGeometry(len, h);
+      const wall = new THREE.Mesh(geo, cementMat());
+      wall.position.set(midX, h/2, (a[1]+b[1])/2); wall.rotation.y=ang;
+      wall.receiveShadow=true; wall.userData.isGlass=false;
+      R3.walls.push(wall); scene.add(wall);
     }
-    const wall = new THREE.Mesh(geo, mat);
-    wall.position.set(midX, h/2, (a[1]+b[1])/2);
-    wall.rotation.y = -Math.atan2(dz, dx);
-    if (!isGlass) wall.receiveShadow = true;
-    wall.userData.isGlass = isGlass;
-    R3.walls.push(wall);
-    scene.add(wall);
   }
 
 
