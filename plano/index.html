@@ -876,15 +876,32 @@ function buildMachine(it){
     const th=0.15, H=2.30;               // grosor y altura de pared
     const hw=w/2, hd=d/2;
     const wallMat=new THREE.MeshStandardMaterial({ color:col, roughness:0.95, metalness:0.02 });
-    // pared trasera (z=-hd) y laterales completas
-    box(g, 0, H/2, -hd+th/2, w, H, th, wallMat);          // trasera
-    box(g, -hw+th/2, H/2, 0, th, H, d, wallMat);          // izquierda
-    box(g,  hw-th/2, H/2, 0, th, H, d, wallMat);          // derecha
-    // pared frontal (z=+hd) partida con hueco de puerta centrado
+    const glassMat=new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.18, roughness:0.05, metalness:0, side:THREE.DoubleSide });
+    // banda de ventanas: mitad superior (como la foto)
+    const sillH = H*0.45;                 // altura del antepecho (parte opaca baja)
+    const winH  = H - sillH - 0.12;       // franja de cristal
+    // helper: pared con ventana (banda alta de cristal) o ciega
+    function wallWin(cx,cy,cz, ww,wd, along){  // along: 'x' o 'z'
+      // antepecho opaco
+      if(along==='x') box(g, cx, sillH/2, cz, ww, sillH, th, wallMat);
+      else            box(g, cx, sillH/2, cz, th, sillH, wd, wallMat);
+      // franja de cristal
+      if(along==='x') box(g, cx, sillH+winH/2, cz, ww, winH, th, glassMat);
+      else            box(g, cx, sillH+winH/2, cz, th, winH, wd, glassMat);
+      // dintel fino arriba
+      if(along==='x') box(g, cx, H-0.06, cz, ww, 0.12, th, wallMat);
+      else            box(g, cx, H-0.06, cz, th, 0.12, wd, wallMat);
+    }
+    // TRASERA (z=-hd) → con ventanas
+    wallWin(0, 0, -hd+th/2, w, 0, 'x');
+    // DERECHA (x=+hw) → con ventanas
+    wallWin(hw-th/2, 0, 0, 0, d, 'z');
+    // IZQUIERDA (x=-hw) → ciega
+    box(g, -hw+th/2, H/2, 0, th, H, d, wallMat);
+    // FRONTAL (z=+hd) partida con puerta → ciega
     const dw=Math.min(0.9, w*0.35), seg=(w-dw)/2;
     box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
-    // dintel sobre la puerta
     box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
     return g;
   }
@@ -1052,7 +1069,7 @@ function build3D(){
     const midY = (a[1]+b[1])/2, midX=(a[0]+b[0])/2;
     const isGlass = state.shape==="cuna" && midY > state.H*0.45 && (a[0]>state.W*0.05 || b[0]>state.W*0.05) && (a[0]>0.02 && b[0]>0.02);
     // pared de acento ROJA: la pared del fondo del BAÑO/ALMACÉN (tramo superior izquierdo, y≈0)
-    const isAccent = !isGlass && midY < state.H*0.05 && midX < state.W*0.55;
+    const isAccent = false;   // rojo desactivado
     const h = isGlass ? GLASS_H : WALL_H;
     const geo = new THREE.PlaneGeometry(len, h);
     let mat;
