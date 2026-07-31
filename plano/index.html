@@ -217,6 +217,8 @@ const PAL = {
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
     ["Césped 3×1", 3.00, 1.00, "#4a7a3a", "rect"],
     ["Sala / recinto", 3.00, 2.50, "#8a8f96", "room"],
+    ["Baño (habitación)", 2.00, 2.00, "#6b7078", "rect"],
+    ["Puerta", 0.90, 0.15, "#8a6d4a", "rect"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
     ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
@@ -705,6 +707,8 @@ function itemHeight(name){
   if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
   if (n.includes("bici")||n.includes("dk-701")) return 1.00;
   if (n.includes("sala")||n.includes("recinto")) return 2.30;
+  if (n.includes("baño (hab")||n.includes("bano (hab")) return 2.60;
+  if (n.includes("puerta")) return 2.05;
   if (n.includes("power rack rojo")) return 2.30;
   if (n.includes("césped")||n.includes("cesped")) return 0.03;
   if (n.includes("tarima pm")) return 0.07;
@@ -837,6 +841,8 @@ const GLB_MAP = [
   ["barra olimpica","models/barra_olimpica.glb"],
   ["tarima pm",   "models/tarima.glb"],
   ["espejo",      "models/espejo.glb"],
+  ["baño (habitación)","models/bano.glb"],
+  ["baño (hab","models/bano.glb"],
   ["power rack rojo","models/power_rack_rojo.glb"],
   ["entrada baño","models/entrada_bano.glb"],
   ["entrada (cub","models/entrada.glb"],
@@ -903,6 +909,27 @@ function buildMachine(it){
     box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
+    return g;
+  }
+
+  // === Puerta: marco + hoja ===
+  if (n.includes("puerta")){
+    const H=2.05, th=0.10;
+    const frameMat=new THREE.MeshStandardMaterial({ color:0x6b5638, roughness:0.7, metalness:0.1 });
+    const doorMat =new THREE.MeshStandardMaterial({ color:0x8a6d4a, roughness:0.8, metalness:0.05 });
+    // jambas
+    box(g, -w/2+0.05, H/2, 0, 0.10, H, th, frameMat);
+    box(g,  w/2-0.05, H/2, 0, 0.10, H, th, frameMat);
+    // dintel
+    box(g, 0, H-0.05, 0, w, 0.10, th, frameMat);
+    // hoja (ligeramente entreabierta para que se vea que es puerta)
+    const hoja=new THREE.Mesh(new THREE.BoxGeometry(w-0.20, H-0.15, 0.05), doorMat);
+    hoja.position.set(0.06, (H-0.10)/2, 0.06);
+    hoja.rotation.y = -0.35;
+    g.add(hoja);
+    // pomo
+    const pomo=new THREE.Mesh(new THREE.SphereGeometry(0.04,10,10), new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.8,roughness:0.3}));
+    pomo.position.set(w/2-0.28, H*0.45, 0.12); g.add(pomo);
     return g;
   }
 
