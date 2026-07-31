@@ -216,6 +216,7 @@ const PAL = {
   palZonas: [
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
     ["Césped 3×1", 3.00, 1.00, "#4a7a3a", "rect"],
+    ["Sala / recinto", 3.00, 2.50, "#8a8f96", "room"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
     ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
@@ -428,7 +429,7 @@ function measureSVG(){
 // Excepción: racks de mancuernas y árboles de discos necesitan frente amplio.
 function haloFor(it, margen){
   const n=(it.name||"").toLowerCase();
-  if(/espejo|cristalera|columna|entrada|baño|almac/.test(n)) return null;   // obra: sin halo
+  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped/.test(n)) return null;   // obra: sin halo
   let mx = margen, my = margen;
   if(/df62|rack mancuernas|árbol|arbol|df64|df65|cambia|db21/.test(n)){
     my = Math.max(margen, 1.5);          // frente amplio para coger material
@@ -446,7 +447,7 @@ function gapBetween(a,b){
 let MIN_PASILLO = 0.80;   // metros de circulación mínima (ajustable con el deslizador)
 function tightPairs(items){
   const pairs=[];
-  const list = items.filter(i=>i.shape!=="line" && !/espejo|cristalera|tarima/i.test(i.name||""));
+  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped/i.test(i.name||""));
   for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
     const g = gapBetween(list[i],list[j]);
     if (g < MIN_PASILLO) pairs.push([list[i].id, list[j].id, g]);
@@ -632,6 +633,23 @@ function render(full=true){
     } else if (it.shape === "tri"){
       g += `<g class="${cls}" ${tr} ${ev}><polygon points="${-it.w/2},${-it.h/2} ${it.w/2},${-it.h/2} ${-it.w/2},${it.h/2}" fill="${it.color}" opacity="0.85"/>` +
            (it.w>1.2?`<text y="-0.1">${it.name}</text><text y="0.3" style="font-size:.26px">${(it.w*it.h/2).toFixed(1)} m²</text>`:"") + `</g>`;
+    } else if (it.shape === "room"){
+      const th=0.15;                     // grosor de pared
+      const dw=Math.min(0.9, it.w*0.35); // ancho de puerta (en pared inferior)
+      const hw=it.w/2, hh=it.h/2;
+      // 4 paredes como rects; la inferior con hueco de puerta (dos tramos)
+      const wallFill=it.color;
+      g += `<g class="${cls}" ${tr} ${ev}>`;
+      g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${it.h}" fill="#ffffff" fill-opacity="0.04"/>`; // interior hueco
+      g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${th}" fill="${wallFill}"/>`;           // arriba
+      g += `<rect x="${-hw}" y="${-hh}" width="${th}" height="${it.h}" fill="${wallFill}"/>`;           // izq
+      g += `<rect x="${hw-th}" y="${-hh}" width="${th}" height="${it.h}" fill="${wallFill}"/>`;         // der
+      // pared inferior partida (hueco de puerta centrado)
+      const seg=(it.w-dw)/2;
+      g += `<rect x="${-hw}" y="${hh-th}" width="${seg}" height="${th}" fill="${wallFill}"/>`;
+      g += `<rect x="${hw-seg}" y="${hh-th}" width="${seg}" height="${th}" fill="${wallFill}"/>`;
+      g += (it.w>1.2 && it.h>1.0 ? `<text y="0" style="font-size:.30px">${it.name}</text>`:"");
+      g += `</g>`;
     } else if (it.shape === "line"){
       g += `<g class="${cls}" ${tr} ${ev}><line x1="${-it.w/2}" y1="0" x2="${it.w/2}" y2="0" stroke="${it.color}" stroke-width="0.09"/><rect x="${-it.w/2}" y="-0.12" width="${it.w}" height="0.24" fill="transparent"/></g>`;
     } else {
@@ -686,6 +704,7 @@ function itemHeight(name){
   if (n.includes("ski")||n.includes("dk-700")) return 2.14;
   if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
   if (n.includes("bici")||n.includes("dk-701")) return 1.00;
+  if (n.includes("sala")||n.includes("recinto")) return 2.30;
   if (n.includes("power rack rojo")) return 2.30;
   if (n.includes("césped")||n.includes("cesped")) return 0.03;
   if (n.includes("tarima pm")) return 0.07;
@@ -849,6 +868,24 @@ function buildMachine(it){
   if (glb){
     const isBar = n.includes("barra");   // barras: escala uniforme para no deformar los discos
     loadGLB(g, glb, w, d, itemHeight(it.name), isBar);
+    return g;
+  }
+
+  // === Sala / recinto: 4 paredes huecas con puerta, sin techo ===
+  if (n.includes("sala") || n.includes("recinto") || it.shape==="room"){
+    const th=0.15, H=2.30;               // grosor y altura de pared
+    const hw=w/2, hd=d/2;
+    const wallMat=new THREE.MeshStandardMaterial({ color:col, roughness:0.95, metalness:0.02 });
+    // pared trasera (z=-hd) y laterales completas
+    box(g, 0, H/2, -hd+th/2, w, H, th, wallMat);          // trasera
+    box(g, -hw+th/2, H/2, 0, th, H, d, wallMat);          // izquierda
+    box(g,  hw-th/2, H/2, 0, th, H, d, wallMat);          // derecha
+    // pared frontal (z=+hd) partida con hueco de puerta centrado
+    const dw=Math.min(0.9, w*0.35), seg=(w-dw)/2;
+    box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
+    box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
+    // dintel sobre la puerta
+    box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
     return g;
   }
 
