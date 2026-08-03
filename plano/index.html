@@ -211,7 +211,8 @@ const PAL = {
     ["Banco plano (tuyo)", 0.60, 1.25, "#b07aa1"],
     ["Barra olímpica vacía", 0.05, 2.20, "#c9a24b"],
     ["Barra cargada", 0.45, 2.20, "#c9a24b"],
-    ["Power Rack rojo", 1.24, 1.60, "#c0392b"]
+    ["Power Rack rojo", 1.24, 1.60, "#c0392b"],
+    ["Remo T", 1.64, 1.87, "#6ac46a"]
   ],
   palZonas: [
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
@@ -710,6 +711,7 @@ function itemHeight(name){
   if (n.includes("baño (hab")||n.includes("bano (hab")) return 2.60;
   if (n.includes("puerta")) return 2.05;
   if (n.includes("power rack rojo")) return 2.30;
+  if (n.includes("remo t")) return 1.27;
   if (n.includes("césped")||n.includes("cesped")) return 0.03;
   if (n.includes("tarima pm")) return 0.07;
   if (n.includes("entrada")) return 2.80;   // cubículo entrada / baño: hasta el techo
@@ -844,6 +846,7 @@ const GLB_MAP = [
   ["baño (habitación)","models/bano.glb"],
   ["baño (hab","models/bano.glb"],
   ["power rack rojo","models/power_rack_rojo.glb"],
+  ["remo t","models/remo_t.glb"],
   ["entrada baño","models/entrada_bano.glb"],
   ["entrada (cub","models/entrada.glb"],
   ["dk-701",      "models/DK701.glb"],
