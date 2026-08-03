@@ -68,7 +68,6 @@
       <legend>LOCAL</legend>
       <label>Elegir local</label>
       <select id="inLocal" onchange="switchLocal(this.value)" style="margin-bottom:8px">
-        <option value="portals">Portals · 88 m² (cuña)</option>
         <option value="nave">Nave · 154 m² (14×11 rect.)</option>
       </select>
       <div class="row">
@@ -232,14 +231,13 @@ const PAL = {
     ["Cristalera (línea 1 m)", 1.00, 0.05, "#7fd4e8", "line"]
   ]
 };
-let state = { W:9, H:12, declared:88, shape:"cuna", items:[] };
+let state = { W:11, H:14, declared:154, shape:"rect", items:[] };
 
 // ===== Locales (cada uno guarda su distribución por separado en la nube) =====
 const LOCALES = {
-  portals: { W:9,  H:12, declared:88,  shape:"cuna" },
   nave:    { W:11, H:14, declared:154, shape:"rect" }
 };
-let currentLocal = "portals";
+let currentLocal = "nave";
 let _unsub = null;
 
 function switchLocal(key){
@@ -778,25 +776,23 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
     // Meshy exporta de pie (Y = altura). NO tocar la vertical.
     let bb = new THREE.Box3().setFromObject(model);
     let size = new THREE.Vector3(); bb.getSize(size);
-    // ¿El modelo viene girado 90°? Comparar su proporción ancho/fondo con la real.
-    const realWide = targetW >= targetD;
-    const modelWide = size.x >= size.z;
-    const noRotar = /remo_t/i.test(url);
-    if (!noRotar && realWide !== modelWide){
-      model.rotation.y = Math.PI/2;
-      bb = new THREE.Box3().setFromObject(model);
-      size = new THREE.Vector3(); bb.getSize(size);
-    }
-    if (noRotar){
-      // REMO T: escala uniforme para que su altura real sea targetH (sin estirar)
-      const fac = targetH/(size.y||1);
-      model.scale.setScalar(fac);
+    // === REMO T: forzar caja exacta 1.00(ancho) x 0.95(alto) x 1.87(largo) ===
+    if (/remo_t/i.test(url)){
+      model.scale.set(1.00/(size.x||1), 0.95/(size.y||1), 1.87/(size.z||1));
       const bbR=new THREE.Box3().setFromObject(model);
       const cR=new THREE.Vector3(); bbR.getCenter(cR);
       model.position.x -= cR.x; model.position.z -= cR.z;
-      model.position.y -= bbR.min.y;
+      model.position.y -= bbR.min.y;   // apoyar al suelo
       g.add(model);
       return;
+    }
+    // ¿El modelo viene girado 90°? Comparar su proporción ancho/fondo con la real.
+    const realWide = targetW >= targetD;
+    const modelWide = size.x >= size.z;
+    if (realWide !== modelWide){
+      model.rotation.y = Math.PI/2;
+      bb = new THREE.Box3().setFromObject(model);
+      size = new THREE.Vector3(); bb.getSize(size);
     }
     if (uniform){
       // BARRA: escala uniforme al largo real (el mayor de ancho/fondo), sin deformar los discos
