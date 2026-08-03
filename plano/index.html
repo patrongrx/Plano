@@ -166,9 +166,9 @@
     <button onclick="setView('planta')" class="v3btn">Planta</button>
     <button onclick="setView('iso')" class="v3btn">Iso</button>
     <button onclick="setView('frontal')" class="v3btn">Frontal</button>
-    <button onclick="toggleWalls()" id="wallBtn" class="v3btn">Paredes: auto</button>
+    <button onclick="toggleWalls()" id="wallBtn" class="v3btn">Paredes: ocultas</button>
     <button onclick="toggleZoneColors()" id="zoneBtn" class="v3btn">Colores zona</button>
-    <button onclick="toggleCeiling()" id="ceilBtn" class="v3btn">Techo: auto</button>
+    <button onclick="toggleCeiling()" id="ceilBtn" class="v3btn">Techo: oculto</button>
     <button onclick="exportPNG()" class="v3btn" title="Descargar imagen del render">📷 Imagen</button>
   </div>
 </div>
@@ -731,7 +731,7 @@ function itemHeight(name){
   return 1.20;
 }
 const WALL_H = 2.8, GLASS_H = 2.6;
-let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null, walls:[], pieces:[], wallMode:'auto', zoneColors:false, ceiling:null, ceilMode:'auto' };
+let R3 = { on:false, scene:null, cam:null, renderer:null, raf:null, ctrl:null, walls:[], pieces:[], wallMode:'ocultas', zoneColors:false, ceiling:null, ceilMode:'oculto' };
 
 function hexToInt(c){ return parseInt((c||"#888888").replace("#",""),16); }
 
@@ -786,6 +786,17 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
       model.rotation.y = Math.PI/2;
       bb = new THREE.Box3().setFromObject(model);
       size = new THREE.Vector3(); bb.getSize(size);
+    }
+    if (noRotar){
+      // REMO T: escala uniforme para que su altura real sea targetH (sin estirar)
+      const fac = targetH/(size.y||1);
+      model.scale.setScalar(fac);
+      const bbR=new THREE.Box3().setFromObject(model);
+      const cR=new THREE.Vector3(); bbR.getCenter(cR);
+      model.position.x -= cR.x; model.position.z -= cR.z;
+      model.position.y -= bbR.min.y;
+      g.add(model);
+      return;
     }
     if (uniform){
       // BARRA: escala uniforme al largo real (el mayor de ancho/fondo), sin deformar los discos
