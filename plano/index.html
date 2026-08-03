@@ -791,6 +791,9 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
       const largo = Math.max(targetW, targetD);
       const ejeLargo = Math.max(size.x, size.z) || 1;
       model.scale.setScalar(largo/ejeLargo);
+    } else if (/remo_t/i.test(url)){
+      // escala uniforme anclada a la ALTURA real (no estira en vertical)
+      model.scale.setScalar(targetH/(size.y||1));
     } else {
       // escala por eje a medidas reales
       model.scale.set(targetW/(size.x||1), targetH/(size.y||1), targetD/(size.z||1));
@@ -875,7 +878,7 @@ function buildMachine(it){
   // === Si hay modelo 3D real para esta pieza, cargarlo ===
   const glb = glbFor(it.name);
   if (glb){
-    const isBar = n.includes("barra");   // barras: escala uniforme para no deformar los discos
+    const isBar = n.includes("barra");   // barras: escala uniforme, elevadas (no tocan suelo)
     loadGLB(g, glb, w, d, itemHeight(it.name), isBar);
     return g;
   }
