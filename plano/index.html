@@ -781,7 +781,8 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
     // ¿El modelo viene girado 90°? Comparar su proporción ancho/fondo con la real.
     const realWide = targetW >= targetD;
     const modelWide = size.x >= size.z;
-    if (realWide !== modelWide){
+    const noRotar = /remo_t/i.test(url);
+    if (!noRotar && realWide !== modelWide){
       model.rotation.y = Math.PI/2;
       bb = new THREE.Box3().setFromObject(model);
       size = new THREE.Vector3(); bb.getSize(size);
@@ -791,9 +792,6 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
       const largo = Math.max(targetW, targetD);
       const ejeLargo = Math.max(size.x, size.z) || 1;
       model.scale.setScalar(largo/ejeLargo);
-    } else if (/remo_t/i.test(url)){
-      // escala uniforme anclada a la ALTURA real (no estira en vertical)
-      model.scale.setScalar(targetH/(size.y||1));
     } else {
       // escala por eje a medidas reales
       model.scale.set(targetW/(size.x||1), targetH/(size.y||1), targetD/(size.z||1));
