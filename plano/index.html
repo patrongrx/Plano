@@ -54,6 +54,9 @@
   <input id="lockPass" type="password" placeholder="Contraseña" autocomplete="off"
          style="padding:10px 14px;width:220px;border:1px solid #2c333d;border-radius:6px;background:#1a1f26;color:#e8e6e0;font-size:14px;text-align:center;"
          onkeydown="if(event.key==='Enter')tryUnlock();">
+  <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9aa3ad;cursor:pointer;margin:0">
+    <input type="checkbox" id="lockRemember" checked style="width:auto;margin:0"> Recordar este dispositivo
+  </label>
   <button onclick="tryUnlock()" style="padding:9px 22px;background:#d4af37;color:#111;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Entrar</button>
   <div id="lockErr" style="font-size:11px;color:#e06666;height:14px;"></div>
 </div>
@@ -66,10 +69,18 @@
   <div id="side">
     <fieldset>
       <legend>LOCAL</legend>
-      <label>Elegir local</label>
-      <select id="inLocal" onchange="switchLocal(this.value)" style="margin-bottom:8px">
+      <label>Plano / opción</label>
+      <select id="inLocal" onchange="switchLocal(this.value)" style="margin-bottom:4px">
         <option value="nave">Nave · 154 m² (14×11 rect.)</option>
       </select>
+      <div class="row" style="margin-bottom:6px">
+        <button onclick="newPlano(true)" title="Crea una copia de este plano para probar otra distribución">⧉ Duplicar</button>
+        <button onclick="newPlano(false)" title="Plano nuevo vacío">＋ Vacío</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button onclick="renamePlano()">✎ Renombrar</button>
+        <button class="danger" onclick="removePlano()">🗑 Quitar</button>
+      </div>
       <div class="row">
         <div><label>Ancho (m)</label><input type="number" id="inW" step="0.1" min="4"></div>
         <div><label>Fondo (m)</label><input type="number" id="inH" step="0.1" min="4"></div>
@@ -120,6 +131,7 @@
       <button onclick="document.getElementById('fileIn').click()">📂 Cargar archivo</button>
       <input type="file" id="fileIn" accept=".json" style="display:none" onchange="loadFile(event)">
       <button class="danger" onclick="if(confirm('¿Vaciar el plano?')){state.items=[];selId=null;save();render();}">🗑 Vaciar plano</button>
+      <button onclick="forgetDevice()">🔒 Olvidar este dispositivo</button>
       <div class="hint">Autoguardado en este navegador. Para pasar el plano a otro dispositivo usa Guardar/Cargar archivo.</div>
     </fieldset>
   </div>
@@ -249,9 +261,11 @@ let currentLocal = "nave";
 let _unsub = null;
 
 function switchLocal(key){
-  if(!LOCALES[key]) return;
+  if(!key) return;
+  flushSave();                       // guarda lo pendiente del plano anterior ANTES de cambiar
   currentLocal = key;
-  const p = LOCALES[key];
+  try{ localStorage.setItem("patron_plano_actual", key); }catch(e){}
+  const p = LOCALES[key] || LOCALES.nave;
   // preset base (los items se cargan de la nube por onSnapshot)
   state = { W:p.W, H:p.H, declared:p.declared, shape:p.shape, items:[] };
   selId = null; nextId = 1;
@@ -305,14 +319,70 @@ function initCloud(){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     cloudReady = true;
-    // suscribirse al local actualmente seleccionado
+    try{ const last=localStorage.getItem("patron_plano_actual"); if(last) currentLocal=last; }catch(e){}
+    listenIndex();
+    // suscribirse al plano actualmente seleccionado
     switchLocal(currentLocal);
   }catch(e){ console.warn("initCloud", e); }
 }
 
+/* ===== Varios planos (opciones) — lista compartida en planos/_index ===== */
+let PLANOS = [{ key:"nave", name:"Nave · 154 m² (14×11 rect.)" }];
+function escHtml(t){ return String(t).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function idxRef(){ return db.collection("planos").doc("_index"); }
+function listenIndex(){
+  idxRef().onSnapshot(snap=>{
+    if(snap.exists && snap.data() && snap.data().list){
+      try{ const l=JSON.parse(snap.data().list); if(Array.isArray(l) && l.length) PLANOS=l; }catch(e){}
+    }
+    renderPlanoSelect();
+    if(!PLANOS.some(p=>p.key===currentLocal)) switchLocal(PLANOS[0].key);   // el actual fue quitado
+  }, err=>console.warn("indice planos:", err));
+}
+function saveIndex(){ return idxRef().set({ list: JSON.stringify(PLANOS), updated: Date.now() }); }
+function renderPlanoSelect(){
+  const sel=document.getElementById("inLocal"); if(!sel) return;
+  sel.innerHTML = PLANOS.map(p=>`<option value="${escHtml(p.key)}">${escHtml(p.name)}</option>`).join("");
+  sel.value = currentLocal;
+}
+function currentPlanoName(){ const p=PLANOS.find(p=>p.key===currentLocal); return p ? p.name : "Plano"; }
+function newPlano(copy){
+  if(!db){ alert("Sin conexión con la nube: no se puede crear el plano."); return; }
+  const name = prompt(copy ? "Nombre de la copia:" : "Nombre del plano nuevo:", copy ? "Copia de " + currentPlanoName() : "Opción nueva");
+  if(!name || !name.trim()) return;
+  flushSave();
+  const key = "plano_" + Date.now().toString(36);
+  const base = copy ? JSON.parse(JSON.stringify(state)) : { W:11, H:14, declared:154, shape:"rect", items:[] };
+  db.collection("planos").doc(key).set({ state: JSON.stringify(base), updated: Date.now() })
+    .then(()=>{
+      PLANOS.push({ key, name:name.trim() });
+      return saveIndex();
+    })
+    .then(()=>{ renderPlanoSelect(); switchLocal(key); })
+    .catch(e=>{ console.warn(e); alert("No se pudo crear el plano: " + e.message); });
+}
+function renamePlano(){
+  const p=PLANOS.find(p=>p.key===currentLocal); if(!p || !db) return;
+  const name=prompt("Nuevo nombre:", p.name); if(!name || !name.trim()) return;
+  p.name=name.trim(); saveIndex(); renderPlanoSelect();
+}
+function removePlano(){
+  if(!db) return;
+  if(PLANOS.length<=1){ alert("Es el único plano: no se puede quitar."); return; }
+  if(!confirm(`¿Quitar "${currentPlanoName()}" de la lista?\n(Los datos quedan guardados en la nube por si quieres recuperarlo.)`)) return;
+  flushSave();
+  PLANOS = PLANOS.filter(p=>p.key!==currentLocal);
+  saveIndex(); renderPlanoSelect(); switchLocal(PLANOS[0].key);
+}
+
+function forgetDevice(){
+  try{ localStorage.removeItem("patron_auth"); }catch(e){}
+  location.reload();
+}
 function tryUnlock(){
   const v = document.getElementById("lockPass").value;
   if (v === PASSWORD){
+    try{ if(document.getElementById("lockRemember").checked) localStorage.setItem("patron_auth", PASSWORD); }catch(e){}
     document.getElementById("lockScreen").style.display = "none";
     initCloud();
   } else {
@@ -493,17 +563,22 @@ function rot(d){ const it=getSel(); if(!it) return; it.ang=((it.ang||0)+d)%360; 
 function dup(){ const it=getSel(); if(!it) return; const c={...it,id:nextId++,x:it.x+0.4,y:it.y+0.4}; state.items.push(c); selId=c.id; save(); render(); }
 function del(){ if(selId==null) return; state.items=state.items.filter(i=>i.id!==selId); selId=null; save(); render(); }
 
+let pendingSave = null;
 function save(){
   try{ localStorage.setItem("patron_portals_china", JSON.stringify(state)); }catch(e){}
   // subir a la nube (evita rebote cuando el cambio vino de la nube)
   if (docRef && !applyingRemote){
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(()=>{
-      docRef.set({ state: JSON.stringify(state), updated: Date.now() })
-            .catch(e=>console.warn("save cloud", e));
-    }, 400);
+    const ref = docRef;              // el plano al que pertenece este cambio
+    pendingSave = ()=>{
+      pendingSave = null;
+      ref.set({ state: JSON.stringify(state), updated: Date.now() })
+         .catch(e=>console.warn("save cloud", e));
+    };
+    saveTimer = setTimeout(()=>{ if(pendingSave) pendingSave(); }, 400);
   }
 }
+function flushSave(){ if(pendingSave){ clearTimeout(saveTimer); pendingSave(); } }
 function load(){
   try{
     const raw = localStorage.getItem("patron_portals_china");
@@ -1568,6 +1643,13 @@ function toggle3D(){
 window.addEventListener("resize", ()=>{ if(R3.on && R3.renderer){ const h=document.getElementById("view3d"); R3.cam.aspect=h.clientWidth/h.clientHeight; R3.cam.updateProjectionMatrix(); R3.renderer.setSize(h.clientWidth,h.clientHeight); } });
 
 load(); buildPalettes(); syncInputs(); render();
+// dispositivo recordado: entrar sin pedir contraseña
+try{
+  if(localStorage.getItem("patron_auth") === PASSWORD){
+    document.getElementById("lockScreen").style.display = "none";
+    initCloud();
+  }
+}catch(e){}
 </script>
 </body>
 </html>
