@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Planificador Portals — Patrón Strength (Pedido China)</title>
+<title>Planificador — Patrón Strength</title>
 <style>
   :root{ --bg:#111418; --panel:#1a1f26; --gold:#d4af37; --line:#2c333d; --txt:#e8e6e0; }
   *{ box-sizing:border-box; margin:0; padding:0; }
@@ -58,8 +58,8 @@
   <div id="lockErr" style="font-size:11px;color:#e06666;height:14px;"></div>
 </div>
 <header>
-  <h1>PATRÓN STRENGTH — PLANIFICADOR PORTALS</h1>
-  <span class="meta">Avda. América 9 · 88 m² · cuña real · pedido China con medidas de catálogo</span>
+  <h1>PATRÓN STRENGTH — PLANIFICADOR</h1>
+  <span class="meta">Nave · 154 m² (11×14) · pedido China con medidas de catálogo</span>
   <button id="btn3d" onclick="toggle3D()" style="flex:none;width:auto;margin:0 0 0 auto;padding:6px 14px;background:#d4af37;color:#111;font-weight:bold;">Ver en 3D</button>
 </header>
 <div class="wrap">
@@ -158,8 +158,15 @@
 </div>
 
 <div id="view3d" style="display:none;position:fixed;inset:52px 0 0 0;background:#0b0e11;">
+  <div id="sel3d" style="display:none;position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:7;gap:6px;align-items:center;background:rgba(20,24,30,.92);border:1px solid #d4af37;border-radius:8px;padding:6px 10px;">
+    <span id="sel3dName" style="color:#d4af37;font-size:12px;margin-right:6px;white-space:nowrap"></span>
+    <button class="v3btn" onclick="rot3D(-15)">↺ 15°</button>
+    <button class="v3btn" onclick="rot3D(15)">↻ 15°</button>
+    <button class="v3btn" onclick="rot3D(90)">↻ 90°</button>
+    <button class="v3btn" onclick="select3D(null)">✕</button>
+  </div>
   <div style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;">
-    1 dedo = girar · 2 dedos = zoom/mover · rueda = zoom · Shift+arrastrar = desplazar
+    Toca una máquina y arrástrala para moverla · vacío = girar · 2 dedos = zoom/mover · Shift+arrastrar = desplazar
   </div>
   <div style="position:absolute;top:10px;right:10px;z-index:6;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
     <button onclick="setView('planta')" class="v3btn">Planta</button>
@@ -219,6 +226,7 @@ const PAL = {
     ["Sala / recinto", 3.00, 2.50, "#8a8f96", "room"],
     ["Baño (habitación)", 2.00, 2.00, "#6b7078", "rect"],
     ["Puerta", 0.90, 0.15, "#8a6d4a", "rect"],
+    ["Mostrador L", 1.65, 1.20, "#a0784e", "L"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
     ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
@@ -253,6 +261,7 @@ function switchLocal(key){
     docRef = db.collection("planos").doc(key);
     if(_unsub){ try{ _unsub(); }catch(e){} }
     _unsub = docRef.onSnapshot(snap=>{
+      if(snap.metadata && snap.metadata.hasPendingWrites) return;   // eco de un cambio propio: ya está aplicado
       if(snap.exists && snap.data() && snap.data().state){
         const sv = JSON.parse(snap.data().state);
         if(sv && Array.isArray(sv.items)){
@@ -430,7 +439,7 @@ function measureSVG(){
 // Excepción: racks de mancuernas y árboles de discos necesitan frente amplio.
 function haloFor(it, margen){
   const n=(it.name||"").toLowerCase();
-  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped/.test(n)) return null;   // obra: sin halo
+  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped|mostrador/.test(n)) return null;   // obra: sin halo
   let mx = margen, my = margen;
   if(/df62|rack mancuernas|árbol|arbol|df64|df65|cambia|db21/.test(n)){
     my = Math.max(margen, 1.5);          // frente amplio para coger material
@@ -448,7 +457,7 @@ function gapBetween(a,b){
 let MIN_PASILLO = 0.80;   // metros de circulación mínima (ajustable con el deslizador)
 function tightPairs(items){
   const pairs=[];
-  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped/i.test(i.name||""));
+  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped|mostrador/i.test(i.name||""));
   for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
     const g = gapBetween(list[i],list[j]);
     if (g < MIN_PASILLO) pairs.push([list[i].id, list[j].id, g]);
@@ -634,6 +643,14 @@ function render(full=true){
     } else if (it.shape === "tri"){
       g += `<g class="${cls}" ${tr} ${ev}><polygon points="${-it.w/2},${-it.h/2} ${it.w/2},${-it.h/2} ${-it.w/2},${it.h/2}" fill="${it.color}" opacity="0.85"/>` +
            (it.w>1.2?`<text y="-0.1">${it.name}</text><text y="0.3" style="font-size:.26px">${(it.w*it.h/2).toFixed(1)} m²</text>`:"") + `</g>`;
+    } else if (it.shape === "L"){
+      const t=0.45, hw=it.w/2, hh=it.h/2;
+      g += `<g class="${cls}" ${tr} ${ev}>`;
+      g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${t}" fill="${it.color}"/>`;
+      g += `<rect x="${hw-t}" y="${-hh}" width="${t}" height="${it.h}" fill="${it.color}"/>`;
+      g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${it.h}" fill="transparent"/>`;
+      g += `<text x="${-0.15}" y="${0.15}" style="font-size:.26px">${it.name}</text>`;
+      g += `</g>`;
     } else if (it.shape === "room"){
       const th=0.15;                     // grosor de pared
       const dw=Math.min(0.9, it.w*0.35); // ancho de puerta (en pared inferior)
@@ -722,6 +739,7 @@ function itemHeight(name){
   if (n.includes("df65")||n.includes("árbol")||n.includes("arbol")) return 1.26;
   if (n.includes("cambia")) return 0.85;
   if (n.includes("búlgara")||n.includes("bulgara")) return 0.50;
+  if (n.includes("mostrador")) return 1.10;
   if (n.includes("columna")) return 2.80;
   if (n.includes("banco")||n.includes("plano")) return 0.50;
   if (n.includes("cajón")||n.includes("cajon")||n.includes("inercial")||n.includes("plio")) return 0.55;
@@ -923,6 +941,20 @@ function buildMachine(it){
     return g;
   }
 
+  // === Mostrador en L: 1.10 m de alto, tablero de madera 45 cm ===
+  if (n.includes("mostrador") || it.shape==="L"){
+    const H=1.10, t=0.45, top=0.04;
+    const bodyMat=new THREE.MeshStandardMaterial({ color:0x1e1e20, roughness:0.8, metalness:0.1 });
+    const woodMat=new THREE.MeshStandardMaterial({ color:0xa0784e, roughness:0.6, metalness:0.05 });
+    // tramo largo (todo el ancho, al fondo)
+    box(g, 0, (H-top)/2, -d/2+t/2, w-0.04, H-top, t-0.04, bodyMat);
+    box(g, 0, H-top/2, -d/2+t/2, w, top, t, woodMat);
+    // tramo lateral (lado derecho, de lado a lado)
+    box(g, w/2-t/2, (H-top)/2, t/2, t-0.04, H-top, d-t-0.04, bodyMat);
+    box(g, w/2-t/2, H-top/2, t/2, t, top, d-t, woodMat);
+    return g;
+  }
+
   // === Puerta: marco + hoja ===
   if (n.includes("puerta")){
     const H=2.05, th=0.10;
@@ -1026,7 +1058,7 @@ function buildMachine(it){
 
 function build3D(){
   const host = document.getElementById("view3d");
-  R3.walls = []; R3.pieces = [];
+  R3.walls = []; R3.pieces = []; R3.selGrp = null; R3.selBox = null; update3DPanel();
   // limpiar render previo
   if (R3.renderer){ host.removeChild(R3.renderer.domElement); R3.renderer.dispose(); }
   const W = host.clientWidth, H = host.clientHeight;
@@ -1238,7 +1270,10 @@ function build3D(){
 
   // cámara inicial: vista aérea en ángulo
   const radius = Math.max(state.W, state.H) * 1.15;
-  R3.orbit = { theta: Math.PI*0.5, phi: Math.PI*0.32, r: radius, tx:cx, ty:0, tz:cz };
+  if(!R3.orbit || R3.orbitKey!==currentLocal){
+    R3.orbit = { theta: Math.PI*0.5, phi: Math.PI*0.32, r: radius, tx:cx, ty:0, tz:cz };
+    R3.orbitKey = currentLocal;
+  }
   applyCam(cam);
 
   R3.scene=scene; R3.cam=cam; R3.renderer=renderer;
@@ -1246,7 +1281,7 @@ function build3D(){
   updateWalls(); updateCeiling();
 
   cancelAnimationFrame(R3.raf);
-  (function loop(){ R3.raf = requestAnimationFrame(loop); renderer.render(scene, cam); })();
+  (function loop(){ R3.raf = requestAnimationFrame(loop); if(R3.selBox) R3.selBox.update(); renderer.render(scene, cam); })();
 }
 
 function applyCam(cam){
@@ -1281,27 +1316,40 @@ function attachControls(dom, cam){
   }
 
   // --- ratón ---
+  let sx=0, sy=0;   // punto de inicio, para distinguir clic de arrastre
   dom.onpointerdown = e=>{
     if (e.pointerType==="touch") return;             // el táctil lo maneja touch*
+    lx=sx=e.clientX; ly=sy=e.clientY; dom.setPointerCapture(e.pointerId);
+    if (e.button===0 && !e.shiftKey && startPieceDrag(e.clientX, e.clientY)){ mode="drag"; return; }
     mode = (e.button===2 || e.shiftKey) ? "pan" : "rot";
-    lx=e.clientX; ly=e.clientY; dom.setPointerCapture(e.pointerId);
   };
   dom.onpointermove = e=>{
     if(!mode || e.pointerType==="touch") return;
+    if(mode==="drag"){ dragPieceTo(e.clientX, e.clientY); return; }
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
     if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
     applyCam(cam); updateWalls(); updateCeiling();
   };
-  dom.onpointerup = ()=>{ mode=null; };
+  dom.onpointerup = e=>{
+    if(mode==="drag") endPieceDrag();
+    else if(mode==="rot" && Math.hypot(e.clientX-sx, e.clientY-sy)<5) select3D(null);   // clic en vacío = deseleccionar
+    mode=null;
+  };
   dom.oncontextmenu = e=>e.preventDefault();
   dom.onwheel = e=>{ e.preventDefault(); zoom(1 + Math.sign(e.deltaY)*0.08); applyCam(cam); };
 
   // --- táctil: 1 dedo = rotar · 2 dedos = zoom + pan ---
   dom.addEventListener("touchstart", e=>{
-    if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+    if(e.touches.length===1){
+      lx=sx=e.touches[0].clientX; ly=sy=e.touches[0].clientY;
+      mode = startPieceDrag(lx, ly) ? "drag" : "rot";
+    }
     else if(e.touches.length===2){ mode="multi"; ld=dist(e.touches); const m=mid(e.touches); lcx=m[0]; lcy=m[1]; }
   }, {passive:true});
   dom.addEventListener("touchmove", e=>{
+    if(mode==="drag" && e.touches.length===1){
+      dragPieceTo(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); return;
+    }
     if(mode==="rot" && e.touches.length===1){
       const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
       rotate(dx,dy); applyCam(cam); updateWalls(); updateCeiling(); e.preventDefault();
@@ -1311,7 +1359,10 @@ function attachControls(dom, cam){
       applyCam(cam); e.preventDefault();
     }
   }, {passive:false});
-  dom.addEventListener("touchend", e=>{ if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
+  dom.addEventListener("touchend", e=>{
+    if(mode==="drag"){ endPieceDrag(); mode=null; return; }
+    if(mode==="rot" && e.touches.length===0 && e.changedTouches.length && Math.hypot(e.changedTouches[0].clientX-sx, e.changedTouches[0].clientY-sy)<8) select3D(null);
+    if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
 }
 
 
@@ -1417,6 +1468,83 @@ function exportPNG(){
     a.download = "patron_strength_render.png";
     document.body.appendChild(a); a.click(); a.remove();
   }catch(e){ alert("No se pudo exportar la imagen: "+e.message); }
+}
+
+
+/* ===== Mover piezas en el 3D ===== */
+function screenRay(cx, cy){
+  const r=R3.renderer.domElement.getBoundingClientRect();
+  const v=new THREE.Vector2(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1);
+  const rc=new THREE.Raycaster(); rc.setFromCamera(v, R3.cam); return rc;
+}
+function pick3D(cx, cy){
+  if(!R3.renderer || !R3.cam) return null;
+  const rc=screenRay(cx,cy);
+  // 1) impacto directo en la geometría
+  const hits=rc.intersectObjects(R3.pieces, true);
+  for(const h of hits){
+    let o=h.object; if(!o.visible) continue;
+    while(o && !(o.userData && o.userData.item)) o=o.parent;
+    if(o) return o;
+  }
+  // 2) máquinas huecas (racks): usar su volumen envolvente; gana la pieza más pequeña
+  let best=null, bestVol=Infinity; const tmp=new THREE.Vector3(), sz=new THREE.Vector3();
+  for(const g of R3.pieces){
+    const bb=new THREE.Box3().setFromObject(g);
+    if(bb.isEmpty() || !rc.ray.intersectBox(bb, tmp)) continue;
+    bb.getSize(sz); const vol=sz.x*sz.y*sz.z;
+    if(vol<bestVol){ bestVol=vol; best=g; }
+  }
+  return best;
+}
+function floorPoint(cx, cy){
+  const out=new THREE.Vector3();
+  return screenRay(cx,cy).ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0), 0), out) ? out : null;
+}
+function select3D(grp){
+  if(!R3.scene) return;
+  if(R3.selBox){ R3.scene.remove(R3.selBox); R3.selBox=null; }
+  R3.selGrp = grp || null;
+  if(grp){ R3.selBox=new THREE.BoxHelper(grp, 0xd4af37); R3.scene.add(R3.selBox); selId=grp.userData.item.id; }
+  else { selId=null; }
+  update3DPanel();
+}
+function startPieceDrag(cx, cy){
+  const g=pick3D(cx,cy); if(!g) return false;
+  select3D(g);
+  const p=floorPoint(cx,cy), it=g.userData.item;
+  R3.dragOff = p ? { dx:it.x-p.x, dz:it.y-p.z } : { dx:0, dz:0 };
+  R3.dragMoved=false;
+  return true;
+}
+function dragPieceTo(cx, cy){
+  const g=R3.selGrp; if(!g) return;
+  const p=floorPoint(cx,cy); if(!p) return;
+  const it=g.userData.item;
+  it.x=Math.round((p.x+R3.dragOff.dx)*20)/20;
+  it.y=Math.round((p.z+R3.dragOff.dz)*20)/20;
+  g.position.set(it.x, it.elev||0, it.y);
+  R3.dragMoved=true;
+}
+function endPieceDrag(){
+  if(R3.dragMoved){ save(); render(); }
+  R3.dragMoved=false;
+  update3DPanel();
+}
+function rot3D(d){
+  const g=R3.selGrp; if(!g) return;
+  const it=g.userData.item;
+  it.ang=(((it.ang||0)+d)%360+360)%360;
+  g.rotation.y=-it.ang*Math.PI/180;
+  save(); render(); update3DPanel();
+}
+function update3DPanel(){
+  const p=document.getElementById("sel3d"); if(!p) return;
+  const g=R3.selGrp;
+  if(!g){ p.style.display="none"; return; }
+  const it=g.userData.item;
+  document.getElementById("sel3dName").textContent = `${it.name} · ${it.ang||0}°`;
+  p.style.display="flex";
 }
 
 function toggle3D(){
