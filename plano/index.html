@@ -111,6 +111,10 @@
       <div id="palPropio"></div>
     </fieldset>
     <fieldset>
+      <legend>MOBILIARIO</legend>
+      <div id="palMuebles"></div>
+    </fieldset>
+    <fieldset>
       <legend>ZONAS Y OBRA</legend>
       <div id="palZonas"></div>
     </fieldset>
@@ -231,6 +235,11 @@ const PAL = {
     ["Barra cargada", 0.45, 2.20, "#c9a24b"],
     ["Power Rack rojo", 1.24, 1.60, "#c0392b"],
     ["Remo T", 1.00, 1.87, "#6ac46a"]
+  ],
+  palMuebles: [
+    ["Sillón (gris)", 0.62, 0.70, "#9a9894", "rect"],
+    ["Mesa centro", 0.90, 0.55, "#3a302a", "rect"],
+    ["Estantería", 1.00, 0.36, "#5a4632", "rect"]
   ],
   palZonas: [
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
@@ -509,7 +518,7 @@ function measureSVG(){
 // Excepción: racks de mancuernas y árboles de discos necesitan frente amplio.
 function haloFor(it, margen){
   const n=(it.name||"").toLowerCase();
-  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped|mostrador/.test(n)) return null;   // obra: sin halo
+  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter/.test(n)) return null;   // obra: sin halo
   let mx = margen, my = margen;
   if(/df62|rack mancuernas|árbol|arbol|df64|df65|cambia|db21/.test(n)){
     my = Math.max(margen, 1.5);          // frente amplio para coger material
@@ -527,7 +536,7 @@ function gapBetween(a,b){
 let MIN_PASILLO = 0.80;   // metros de circulación mínima (ajustable con el deslizador)
 function tightPairs(items){
   const pairs=[];
-  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped|mostrador/i.test(i.name||""));
+  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter/i.test(i.name||""));
   for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
     const g = gapBetween(list[i],list[j]);
     if (g < MIN_PASILLO) pairs.push([list[i].id, list[j].id, g]);
@@ -815,6 +824,9 @@ function itemHeight(name){
   if (n.includes("cambia")) return 0.85;
   if (n.includes("búlgara")||n.includes("bulgara")) return 0.50;
   if (n.includes("mostrador")) return 1.10;
+  if (n.includes("sillón") || n.includes("sillon")) return 0.80;
+  if (n.includes("mesa centro")) return 0.45;
+  if (n.includes("estantería") || n.includes("estanteria")) return 1.36;
   if (n.includes("columna")) return 2.80;
   if (n.includes("banco")||n.includes("plano")) return 0.50;
   if (n.includes("cajón")||n.includes("cajon")||n.includes("inercial")||n.includes("plio")) return 0.55;
@@ -1013,6 +1025,46 @@ function buildMachine(it){
     box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
+    return g;
+  }
+
+  // === Sillón: patas y brazos de madera, asiento y respaldo tapizados en gris ===
+  if (n.includes("sillón") || n.includes("sillon")){
+    const wood=new THREE.MeshStandardMaterial({ color:0x5e2f14, roughness:0.55, metalness:0.05 });
+    const fab =new THREE.MeshStandardMaterial({ color:0x5f5d5a, roughness:0.95, metalness:0 });
+    const lx=w/2-0.05, lz=d/2-0.06;
+    for (const sx of [-lx,lx]) for (const sz of [-lz,lz]) box(g, sx, 0.21, sz, 0.04, 0.42, 0.04, wood);   // patas
+    box(g, 0, 0.36, 0, w-0.06, 0.04, d-0.08, wood);                                                     // bastidor
+    box(g, 0, 0.44, 0.03, w-0.12, 0.12, d-0.18, fab);                                                  // asiento
+    const back=new THREE.Mesh(new THREE.BoxGeometry(w-0.14, 0.42, 0.10), fab);                         // respaldo inclinado
+    back.position.set(0, 0.68, -d/2+0.10); back.rotation.x=-0.18; g.add(back);
+    for (const sx of [-lx,lx]){                                                                          // brazos
+      box(g, sx, 0.60, 0, 0.05, 0.04, d-0.04, wood);
+      box(g, sx, 0.48, d/2-0.10, 0.04, 0.24, 0.04, wood);
+    }
+    return g;
+  }
+
+  // === Mesa de centro (tipo IKEA LACK): tablero, 4 patas y balda inferior ===
+  if (n.includes("mesa centro")){
+    const m=new THREE.MeshStandardMaterial({ color:0x110e0c, roughness:0.7, metalness:0.05 });
+    const H=0.45, leg=0.05;
+    box(g, 0, H-0.025, 0, w, 0.05, d, m);                                                               // tablero
+    for (const sx of [-w/2+leg/2+0.01, w/2-leg/2-0.01]) for (const sz of [-d/2+leg/2+0.01, d/2-leg/2-0.01])
+      box(g, sx, (H-0.05)/2, sz, leg, H-0.05, leg, m);                                                 // patas
+    box(g, 0, 0.17, 0, w-0.10, 0.02, d-0.06, m);                                                        // balda inferior
+    return g;
+  }
+
+  // === Estantería (tipo IKEA FJÄLLBO): marco negro, baldas de madera, base de rejilla ===
+  if (n.includes("estantería") || n.includes("estanteria")){
+    const steel=new THREE.MeshStandardMaterial({ color:0x18181a, roughness:0.5, metalness:0.5 });
+    const wood =new THREE.MeshStandardMaterial({ color:0x2e2014, roughness:0.65, metalness:0.05 });
+    const H=1.36, p=0.025;
+    for (const sx of [-w/2+p/2, 0, w/2-p/2]) for (const sz of [-d/2+p/2, d/2-p/2]) box(g, sx, H/2, sz, p, H, p, steel);   // postes
+    box(g, 0, 0.09, 0, w-0.02, 0.015, d-0.02, steel);                                                   // base de rejilla
+    for (const y of [0.50, 0.92, H-0.012]) box(g, 0, y, 0, w, 0.024, d, wood);                          // baldas de madera
+    for (const sz of [-d/2+p/2, d/2-p/2]) box(g, 0, H-0.03, sz, w, 0.03, p, steel);                     // travesaños superiores
     return g;
   }
 
