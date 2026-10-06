@@ -33,6 +33,9 @@
   #stats b{ color:var(--gold); }
   #selInfo{ font-size:11px; color:#9aa3ad; min-height:16px; margin-bottom:4px; }
   svg{ display:block; margin:0 auto; max-width:100%; max-height:calc(100vh - 210px); height:auto; background:#1b2330; border:1px solid var(--gold); border-radius:8px; touch-action:none; }
+  .ck{ display:flex; justify-content:space-between; font-size:11px; padding:2px 4px; border-radius:3px; cursor:pointer; }
+  .ck:hover{ background:#242b34; }
+  .ck.ok b{ color:#7bbf7e; } .ck.falta b{ color:#ffa640; } .ck.sobra b{ color:#ff6060; }
   .v3btn{ width:auto; padding:6px 10px; font-size:11px; background:rgba(20,24,30,.85); color:#e8e6e0; border:1px solid #3a4450; border-radius:6px; cursor:pointer; }
   .v3btn:hover{ background:#d4af37; color:#111; }
   .item{ cursor:grab; touch-action:none; }
@@ -62,7 +65,7 @@
 </div>
 <header>
   <h1>PATRÓN STRENGTH — PLANIFICADOR</h1>
-  <span class="meta">Nave · 154 m² (11×14) · pedido China con medidas de catálogo</span>
+  <span class="meta">Nave · medidas reales de catálogo</span>
   <button id="btn3d" onclick="toggle3D()" style="flex:none;width:auto;margin:0 0 0 auto;padding:6px 14px;background:#d4af37;color:#111;font-weight:bold;">Ver en 3D</button>
 </header>
 <div class="wrap">
@@ -87,23 +90,26 @@
       </div>
       <label>Forma</label>
       <select id="inShape">
-        <option value="cuna">Cuña real (Portals)</option>
-        <option value="curva">Curva (cuarto elipse)</option>
         <option value="rect">Rectángulo</option>
       </select>
       <div id="stats"></div>
     </fieldset>
 
     <fieldset>
-      <legend>PEDIDO CHINA — MÁQUINAS</legend>
+      <legend>PEDIDO · COLOCADO</legend>
+      <div id="checklist"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>MÁQUINAS</legend>
       <div id="palChina"></div>
     </fieldset>
     <fieldset>
-      <legend>PEDIDO CHINA — CARDIO</legend>
+      <legend>CARDIO</legend>
       <div id="palCardio"></div>
     </fieldset>
     <fieldset>
-      <legend>PEDIDO CHINA — SOPORTES</legend>
+      <legend>SOPORTES Y ALMACENAJE</legend>
       <div id="palSop"></div>
     </fieldset>
     <fieldset>
@@ -134,9 +140,10 @@
       <button onclick="saveFile()">💾 Guardar archivo (.json)</button>
       <button onclick="document.getElementById('fileIn').click()">📂 Cargar archivo</button>
       <input type="file" id="fileIn" accept=".json" style="display:none" onchange="loadFile(event)">
-      <button class="danger" onclick="if(confirm('¿Vaciar el plano?')){state.items=[];selId=null;save();render();}">🗑 Vaciar plano</button>
+      <button onclick="openVersions()">🕘 Versiones guardadas</button>
+      <button class="danger" onclick="vaciarPlano()">🗑 Vaciar plano</button>
       <button onclick="forgetDevice()">🔒 Olvidar este dispositivo</button>
-      <div class="hint">Autoguardado en este navegador. Para pasar el plano a otro dispositivo usa Guardar/Cargar archivo.</div>
+      <div class="hint">Se guarda solo en la nube. Cada 10 min de edición se guarda una versión que puedes recuperar en «Versiones».</div>
     </fieldset>
   </div>
 
@@ -152,12 +159,17 @@
       <div style="flex:0 0 auto"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
         <input type="checkbox" id="haloOn" onchange="render()" style="width:auto;margin:0"> Zona de trabajo
       </label></div>
+      <div style="flex:0 0 auto"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Pega las piezas a las paredes y las alinea con las de al lado. Mantén Alt para desactivarlo un momento">
+        <input type="checkbox" id="snapOn" checked style="width:auto;margin:0"> 🧲 Imán
+      </label></div>
       <div style="flex:0 0 auto"><button onclick="toggleMeasure()" id="measBtn" style="width:auto;padding:6px 12px">📏 Medir</button></div>
       <div style="flex:1"><label>Margen circulación: <b id="haloVal">0.80</b> m</label>
         <input type="range" id="haloM" min="0.3" max="1.5" step="0.1" value="0.8" oninput="document.getElementById('haloVal').textContent=(+this.value).toFixed(2); render();" style="width:100%">
       </div>
     </div>
     <div class="row" style="max-width:560px">
+      <button onclick="undo()" class="undoBtn" title="Deshacer (Ctrl/Cmd+Z)">↶ Deshacer</button>
+      <button onclick="redo()" class="redoBtn" title="Rehacer (Ctrl/Cmd+Shift+Z)">↷ Rehacer</button>
       <button onclick="rot(15)">↻ 15°</button>
       <button onclick="rot(90)">↻ 90°</button>
       <button onclick="dup()">⧉ Duplicar</button>
@@ -179,12 +191,18 @@
     <button class="v3btn" onclick="rot3D(-15)">↺ 15°</button>
     <button class="v3btn" onclick="rot3D(15)">↻ 15°</button>
     <button class="v3btn" onclick="rot3D(90)">↻ 90°</button>
-    <button class="v3btn" onclick="select3D(null)">✕</button>
+    <button class="v3btn" onclick="elev3D(0.05)" title="Subir 5 cm">▲</button>
+    <button class="v3btn" onclick="elev3D(-0.05)" title="Bajar 5 cm">▼</button>
+    <button class="v3btn" onclick="dup3D()" title="Duplicar">⧉</button>
+    <button class="v3btn" onclick="del3D()" title="Borrar" style="border-color:#7a2a2a">🗑</button>
+    <button class="v3btn" onclick="select3D(null)" title="Soltar">✕</button>
   </div>
   <div style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;">
     Toca una máquina y arrástrala para moverla · vacío = girar · 2 dedos = zoom/mover · Shift+arrastrar = desplazar
   </div>
   <div style="position:absolute;top:10px;right:10px;z-index:6;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+    <button onclick="undo()" class="v3btn undoBtn" title="Deshacer">↶</button>
+    <button onclick="redo()" class="v3btn redoBtn" title="Rehacer">↷</button>
     <button onclick="setView('planta')" class="v3btn">Planta</button>
     <button onclick="setView('iso')" class="v3btn">Iso</button>
     <button onclick="setView('frontal')" class="v3btn">Frontal</button>
@@ -242,6 +260,7 @@ const PAL = {
     ["Estantería", 1.00, 0.36, "#5a4632", "rect"]
   ],
   palZonas: [
+    ["Línea suelo (blanca)", 3.00, 0.06, "#f2f2f2", "rect"],
     ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
     ["Césped 3×1", 3.00, 1.00, "#4a7a3a", "rect"],
     ["Sala / recinto", 3.00, 2.50, "#8a8f96", "room"],
@@ -249,8 +268,6 @@ const PAL = {
     ["Puerta", 0.90, 0.15, "#8a6d4a", "rect"],
     ["Mostrador L", 1.65, 1.20, "#a0784e", "L"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
-    ["Tarima PL", 2.50, 3.00, "#7f8c99", "rect"],
-    ["Baño / Almacén", 3.00, 2.50, "#4a5560", "tri"],
     ["Columna Ø50", 0.50, 0.50, "#333b44", "circle"],
     ["Entrada (cubículo)", 1.00, 1.00, "#9c8a6a", "rect"],
     ["Entrada baño", 1.50, 2.15, "#9c8a6a", "rect"],
@@ -278,6 +295,8 @@ function switchLocal(key){
   // preset base (los items se cargan de la nube por onSnapshot)
   state = { W:p.W, H:p.H, declared:p.declared, shape:p.shape, items:[] };
   selId = null; nextId = 1;
+  undoStack = []; redoStack = []; lastSavedJSON = JSON.stringify(state); lastVersionAt = 0;
+  try{ updateUndoButtons(); }catch(e){}
   const sel=document.getElementById("inLocal"); if(sel) sel.value=key;
   // reconfigurar Firebase al documento de este local
   if(db){
@@ -291,6 +310,7 @@ function switchLocal(key){
           applyingRemote = true;
           state = sv;
           nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+          lastSavedJSON = JSON.stringify(state);
           try{ syncInputs(); }catch(e){}
           render();
           if(R3.on){ build3D(); }
@@ -423,43 +443,6 @@ function getOutline(){
   return { d, pts };
 }
 
-// Terraza exterior de 5 m siguiendo la curva de la cristalera (solo forma "cuna")
-const TERRAZA_FONDO = 5;
-function bezPt(C,ctrl,D,t){ const u=1-t; return [u*u*C[0]+2*u*t*ctrl[0]+t*t*D[0], u*u*C[1]+2*u*t*ctrl[1]+t*t*D[1]]; }
-function bezTan(C,ctrl,D,t){ const u=1-t; return [2*(u*(ctrl[0]-C[0])+t*(D[0]-ctrl[0])), 2*(u*(ctrl[1]-C[1])+t*(D[1]-ctrl[1]))]; }
-function getTerraza(){
-  const {W,H,shape}=state;
-  if (shape!=="cuna") return null;
-  const C=[W,0.42*H], ctrl=[0.88*W,1.04*H], D=[0.12*W,0.97*H], E=[0,0.97*H];
-  const N=24, inner=[], outer=[], f=TERRAZA_FONDO;
-  // Borde INTERIOR de la terraza = el propio contorno del local (entrada E→D + curva cristalera D→C).
-  inner.push(E, D);
-  for (let i=1;i<=N;i++){
-    const t=i/N, u=1-t;
-    inner.push([u*u*D[0]+2*u*t*ctrl[0]+t*t*C[0], u*u*D[1]+2*u*t*ctrl[1]+t*t*C[1]]);
-  }
-  // Borde EXTERIOR = misma forma desplazada f metros hacia la calle (alejándose del interior).
-  const ref=[0.45*W, 0.45*H];        // punto interior de referencia (centro aproximado del local)
-  for (let k=0;k<inner.length;k++){
-    const prev=inner[Math.max(0,k-1)], next=inner[Math.min(inner.length-1,k+1)];
-    let tx=next[0]-prev[0], ty=next[1]-prev[1];
-    const tl=Math.hypot(tx,ty)||1; tx/=tl; ty/=tl;
-    let nx=ty, ny=-tx;                                   // normal
-    // orientar la normal en sentido contrario al interior del local
-    if ((inner[k][0]-ref[0])*nx + (inner[k][1]-ref[1])*ny < 0){ nx=-nx; ny=-ny; }
-    outer.push([inner[k][0]+nx*f, inner[k][1]+ny*f]);
-  }
-  let d=`M ${inner[0][0].toFixed(3)} ${inner[0][1].toFixed(3)}`;
-  for (let i=1;i<inner.length;i++) d+=` L ${inner[i][0].toFixed(3)} ${inner[i][1].toFixed(3)}`;
-  for (let i=outer.length-1;i>=0;i--) d+=` L ${outer[i][0].toFixed(3)} ${outer[i][1].toFixed(3)}`;
-  d+=" Z";
-  // etiqueta: punto medio entre borde interior y exterior, hacia la mitad del recorrido
-  const mi=inner[Math.floor(inner.length/2)], mo=outer[Math.floor(outer.length/2)];
-  const lbl=[(mi[0]+mo[0])/2, (mi[1]+mo[1])/2];
-  const area=polyArea([...inner,...outer.slice().reverse()]);
-  return { d, lbl, area, maxX: Math.max(...outer.map(p=>p[0])), maxY: Math.max(...outer.map(p=>p[1])) };
-}
-
 function polyArea(pts){
   let a=0;
   for (let i=0;i<pts.length;i++){
@@ -518,7 +501,7 @@ function measureSVG(){
 // Excepción: racks de mancuernas y árboles de discos necesitan frente amplio.
 function haloFor(it, margen){
   const n=(it.name||"").toLowerCase();
-  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter/.test(n)) return null;   // obra: sin halo
+  if(/espejo|cristalera|columna|entrada|baño|almac|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter|línea suelo/.test(n)) return null;   // obra: sin halo
   let mx = margen, my = margen;
   if(/df62|rack mancuernas|árbol|arbol|df64|df65|cambia|db21/.test(n)){
     my = Math.max(margen, 1.5);          // frente amplio para coger material
@@ -536,7 +519,7 @@ function gapBetween(a,b){
 let MIN_PASILLO = 0.80;   // metros de circulación mínima (ajustable con el deslizador)
 function tightPairs(items){
   const pairs=[];
-  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter/i.test(i.name||""));
+  const list = items.filter(i=>i.shape!=="line" && i.shape!=="room" && !/espejo|cristalera|tarima|sala|recinto|césped|cesped|mostrador|sillón|sillon|mesa centro|estanter|línea suelo/i.test(i.name||""));
   for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
     const g = gapBetween(list[i],list[j]);
     if (g < MIN_PASILLO) pairs.push([list[i].id, list[j].id, g]);
@@ -573,8 +556,24 @@ function dup(){ const it=getSel(); if(!it) return; const c={...it,id:nextId++,x:
 function del(){ if(selId==null) return; state.items=state.items.filter(i=>i.id!==selId); selId=null; save(); render(); }
 
 let pendingSave = null;
-function save(){
-  try{ localStorage.setItem("patron_portals_china", JSON.stringify(state)); }catch(e){}
+let undoStack = [], redoStack = [], lastSavedJSON = null, lastVersionAt = 0;
+const VERSION_EVERY = 10*60*1000;     // una copia automática cada 10 min de edición
+function save(opts){
+  opts = opts || {};
+  const cur = JSON.stringify(state);
+  if (!applyingRemote){
+    if (lastSavedJSON !== null && cur !== lastSavedJSON){
+      if (!opts.noHistory){
+        undoStack.push(lastSavedJSON); if (undoStack.length>60) undoStack.shift();
+        redoStack = [];
+      }
+      // copia automática en la nube del estado ANTERIOR al cambio
+      if (Date.now() - lastVersionAt > VERSION_EVERY){ saveVersion(lastSavedJSON, "automática"); lastVersionAt = Date.now(); }
+    }
+    lastSavedJSON = cur;
+    updateUndoButtons();
+  }
+  try{ localStorage.setItem("patron_portals_china", cur); }catch(e){}
   // subir a la nube (evita rebote cuando el cambio vino de la nube)
   if (docRef && !applyingRemote){
     clearTimeout(saveTimer);
@@ -594,11 +593,12 @@ function load(){
     if (raw){ const s = JSON.parse(raw); if (s && s.items){ state = s; } }
   }catch(e){}
   nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+  lastSavedJSON = JSON.stringify(state);
 }
 function saveFile(){
   const blob = new Blob([JSON.stringify(state,null,1)],{type:"application/json"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = "plano_portals_china.json"; a.click();
+  a.href = URL.createObjectURL(blob); a.download = "plano_patron_" + (currentPlanoName().replace(/[^a-z0-9]+/gi,"_")) + ".json"; a.click();
   URL.revokeObjectURL(a.href);
 }
 function loadFile(ev){
@@ -661,6 +661,7 @@ function moveDrag(ev){
   const p = svgPoint(ev);
   it.x = Math.round((p.x+drag.dx)*20)/20;
   it.y = Math.round((p.y+drag.dy)*20)/20;
+  snapItem(it, ev.altKey);
   drag.moved = true;
   // mover SOLO esta pieza (rápido); sin redibujar el SVG entero
   if (drag.node){
@@ -677,7 +678,7 @@ function render(full=true){
   const {W,H} = state;
   const o = getOutline();
   const areaLocal = polyArea(o.pts);
-  const terr = getTerraza();
+  const terr = null;
   const rightPad = terr ? (terr.maxX - W + 0.6) : 0.6;
   const botPad = terr ? Math.max(1.2, terr.maxY - H + 0.9) : 1.2;
   svg.setAttribute("viewBox", `${-0.6} ${-0.6} ${W+0.6+rightPad} ${H+0.6+botPad}`);
@@ -690,12 +691,6 @@ function render(full=true){
   // grid
   for (let x=1;x<W;x++) g += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#44546b" stroke-width="0.02"/>`;
   for (let y=1;y<H;y++) g += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#44546b" stroke-width="0.02"/>`;
-  if (state.shape === "cuna"){
-    g += `<text class="lbl gold" x="${0.06*W}" y="${1.02*H}">ENTRADA</text>`;
-    g += `<text class="lbl" x="${0.55*W}" y="${0.88*H}" transform="rotate(-12 ${0.55*W} ${0.88*H})">ventanas (fachada curva)</text>`;
-    g += `<text class="lbl" x="${0.62*W}" y="${0.18*H}" transform="rotate(37 ${0.62*W} ${0.18*H})">medianera vecino</text>`;
-    g += `<text class="lbl" x="${0.05*W}" y="-0.15">baño/almacén en esta esquina ↑</text>`;
-  }
   let occ = 0, out = 0;
   // --- halos de zona de trabajo (se dibujan primero, debajo de las piezas) ---
   const haloEl = document.getElementById("haloOn");
@@ -762,6 +757,7 @@ function render(full=true){
   }
   g += measureSVG();
   svg.innerHTML = g;
+  renderChecklist();
   document.getElementById("stats").innerHTML =
     `Local: <b>${areaLocal.toFixed(1)} m²</b> · Ocupado: <b>${occ.toFixed(1)} m²</b> (${(100*occ/areaLocal).toFixed(0)}%) · Piezas: ${state.items.length}` +
     (out?` · <span style="color:#ff4040">${out} fuera del local</span>`:"") +
@@ -824,6 +820,7 @@ function itemHeight(name){
   if (n.includes("cambia")) return 0.85;
   if (n.includes("búlgara")||n.includes("bulgara")) return 0.50;
   if (n.includes("mostrador")) return 1.10;
+  if (n.includes("línea suelo")) return 0.004;
   if (n.includes("sillón") || n.includes("sillon")) return 0.80;
   if (n.includes("mesa centro")) return 0.45;
   if (n.includes("estantería") || n.includes("estanteria")) return 1.36;
@@ -1025,6 +1022,12 @@ function buildMachine(it){
     box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
     box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
+    return g;
+  }
+
+  // === Línea blanca pintada en el suelo ===
+  if (n.includes("línea suelo") || n.includes("linea suelo")){
+    box(g, 0, 0.003, 0, w, 0.004, d, new THREE.MeshStandardMaterial({ color:0xf2f2f2, roughness:0.6, metalness:0 }));
     return g;
   }
 
@@ -1247,7 +1250,7 @@ function build3D(){
   floorGeo.rotateX(Math.PI/2);
   floorGeo.computeVertexNormals();
   const floorMat = new THREE.MeshStandardMaterial({ color:0x2b2b2e, roughness:0.55, metalness:0.25, side:THREE.DoubleSide });
-  try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0x6a6a6e); } catch(e){}
+  try { const ftex=rubberTexture(); ftex.repeat.set(state.W*1.2, state.H*1.2); floorMat.map=ftex; floorMat.color.set(0x3a3c3e); } catch(e){}
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.receiveShadow = true;
   scene.add(floor);
@@ -1257,8 +1260,9 @@ function build3D(){
   grid.material.opacity=0.15; grid.material.transparent=true;
   scene.add(grid);
 
-  // --- PAREDES: microcemento claro, medianera izquierda en BURDEOS de acento ---
-  const cementTex = cementTexture("#c9c6c0");
+  // --- PAREDES: microcemento gris oscuro con franjas rojas verticales (como la nave real) ---
+  const cementTex = cementTexture("#55575a");
+  const stripeMat = new THREE.MeshStandardMaterial({ color:0xb3202a, roughness:0.8, metalness:0.05, side:THREE.DoubleSide });
   for (let i=0;i<pts.length;i++){
     const a = pts[i], b = pts[(i+1)%pts.length];
     const dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
@@ -1275,7 +1279,7 @@ function build3D(){
 
     const ang = -Math.atan2(dz, dx);
     const cementMat = ()=>{ const t=cementTex.clone(); t.needsUpdate=true; t.repeat.set(Math.max(1,len/2),1);
-      return new THREE.MeshStandardMaterial({ map:t, color:0xcfccc6, roughness:0.95, metalness:0.02, side:THREE.DoubleSide }); };
+      return new THREE.MeshStandardMaterial({ map:t, color:0xffffff, roughness:0.9, metalness:0.02, side:THREE.DoubleSide }); };
 
     if (isGlass){
       const geo = new THREE.PlaneGeometry(len, h);
@@ -1302,84 +1306,44 @@ function build3D(){
       wall.position.set(midX, h/2, (a[1]+b[1])/2); wall.rotation.y=ang;
       wall.receiveShadow=true; wall.userData.isGlass=false;
       R3.walls.push(wall); scene.add(wall);
+      // franjas rojas verticales
+      let nx=dz/len, nz=-dx/len;                                   // normal de la pared
+      if ((cx-midX)*nx + (cz-(a[1]+b[1])/2)*nz < 0){ nx=-nx; nz=-nz; }   // hacia el interior
+      const nS=Math.floor(len/3);
+      for (let k=1;k<=nS;k++){
+        const t=k/(nS+1);
+        const st=new THREE.Mesh(new THREE.PlaneGeometry(0.12, h), stripeMat);
+        st.position.set(a[0]+dx*t+nx*0.012, h/2, a[1]+dz*t+nz*0.012); st.rotation.y=ang;
+        st.userData.isGlass=false; R3.walls.push(st); scene.add(st);
+      }
     }
   }
 
 
-  // ================= TECHO (hormigón visto + vigas + carriles de focos + LED perimetral) =================
+  // ================= TECHO: falso techo de placas blancas 60×60 + pantallas fluorescentes =================
   R3.ceiling = new THREE.Group();
   {
-    const CH = WALL_H;                       // altura del techo
-    // --- Losa de hormigón (misma forma que el suelo) ---
-    const slabGeo = new THREE.ShapeGeometry(shape);
-    slabGeo.rotateX(Math.PI/2);              // igual que el suelo (orientación correcta)
-    slabGeo.computeVertexNormals();
-    const slabMat = new THREE.MeshStandardMaterial({ color:0xb9b7b2, roughness:0.95, metalness:0.02, side:THREE.DoubleSide });
-    try { const ct=cementTexture("#bab8b3"); ct.repeat.set(state.W/2, state.H/2); slabMat.map=ct; slabMat.color.set(0xffffff); } catch(e){}
-    const slab = new THREE.Mesh(slabGeo, slabMat);
-    slab.position.y = CH;                    // solo subir a la altura del techo
+    const CH = WALL_H;
+    const c=document.createElement("canvas"); c.width=c.height=128; const x=c.getContext("2d");
+    x.fillStyle="#ecebe7"; x.fillRect(0,0,128,128);
+    x.strokeStyle="#b9b8b3"; x.lineWidth=4; x.strokeRect(0,0,128,128);       // perfilería de la placa
+    const tex=new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+    tex.repeat.set(1/0.6, 1/0.6);                                            // 1 placa = 0,60 m
+    const slabGeo = new THREE.ShapeGeometry(shape);                          // UV en metros → repeat por placa
+    slabGeo.rotateX(Math.PI/2); slabGeo.computeVertexNormals();
+    const slab = new THREE.Mesh(slabGeo, new THREE.MeshStandardMaterial({ map:tex, roughness:0.9, metalness:0, side:THREE.DoubleSide }));
+    slab.position.y = CH;
     R3.ceiling.add(slab);
-
-    // --- Vigas transversales de hormigón ---
-    const beamMat = new THREE.MeshStandardMaterial({ color:0xc2c0bb, roughness:0.95, metalness:0.02 });
-    const nBeams = Math.max(3, Math.round(state.H/2.2));
-    for (let i=1;i<nBeams;i++){
-      const zz = (state.H/nBeams)*i;
-      // ancho real del local a esa profundidad: buscar cruces del contorno
-      let xmin=1e9, xmax=-1e9;
-      for(let k=0;k<pts.length;k++){
-        const p1=pts[k], p2=pts[(k+1)%pts.length];
-        if((p1[1]-zz)*(p2[1]-zz) <= 0 && Math.abs(p2[1]-p1[1])>1e-6){
-          const t=(zz-p1[1])/(p2[1]-p1[1]);
-          const xi=p1[0]+t*(p2[0]-p1[0]);
-          xmin=Math.min(xmin,xi); xmax=Math.max(xmax,xi);
-        }
-      }
-      if(xmax<=xmin) continue;
-      const len = xmax-xmin;
-      const bm = new THREE.Mesh(new THREE.BoxGeometry(len, 0.26, 0.28), beamMat);
-      bm.position.set((xmin+xmax)/2, CH-0.15, zz);
-      bm.receiveShadow = true;
-      R3.ceiling.add(bm);
-    }
-
-    // --- Carriles de focos (rail negro + focos blancos) ---
-    const railMat  = new THREE.MeshStandardMaterial({ color:0x1c1c1e, roughness:0.6, metalness:0.4 });
-    const spotMat  = new THREE.MeshStandardMaterial({ color:0xf2f2f0, roughness:0.4, metalness:0.3 });
-    const emitMat  = new THREE.MeshStandardMaterial({ color:0xffe9c4, emissive:0xffd9a0, emissiveIntensity:1.4, roughness:0.3 });
-    const rails = [state.W*0.30, state.W*0.60];
-    for (const rx of rails){
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, state.H*0.60), railMat);
-      rail.position.set(rx, CH-0.32, state.H*0.45);
-      R3.ceiling.add(rail);
-      const nSpots = 5;
-      for (let i=0;i<nSpots;i++){
-        const zz = state.H*0.45 - state.H*0.30 + (state.H*0.60/(nSpots-1))*i;
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.075,0.17,12), spotMat);
-        body.position.set(rx, CH-0.45, zz);
-        body.rotation.z = 0.32;
-        R3.ceiling.add(body);
-        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.02,12), emitMat);
-        lens.position.set(rx, CH-0.535, zz);
-        R3.ceiling.add(lens);
+    // pantallas fluorescentes cada ~2,4 m
+    const tubeMat=new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xf4f7ff, emissiveIntensity:1.2, roughness:0.3 });
+    for (let zz=1.8; zz<state.H-0.6; zz+=2.4){
+      for (let xx=state.W*0.3; xx<state.W; xx+=state.W*0.4){
+        const t=new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 1.2), tubeMat);
+        t.position.set(xx, CH-0.03, zz); R3.ceiling.add(t);
       }
     }
-
-    // --- Tira LED perimetral cálida (luz indirecta pegada a la pared) ---
-    const ledMat = new THREE.MeshStandardMaterial({ color:0xffe4b8, emissive:0xffcf8a, emissiveIntensity:1.7, roughness:0.4 });
-    for (let i=0;i<pts.length;i++){
-      const a = pts[i], b = pts[(i+1)%pts.length];
-      const dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
-      if (len<0.05) continue;
-      const led = new THREE.Mesh(new THREE.BoxGeometry(len, 0.045, 0.06), ledMat);
-      led.position.set((a[0]+b[0])/2, CH-0.10, (a[1]+b[1])/2);
-      led.rotation.y = -Math.atan2(dz, dx);
-      R3.ceiling.add(led);
-    }
-    // luz real cálida que emula el rebote del LED perimetral
-    const ledLight = new THREE.PointLight(0xffd9a0, 0.45, Math.max(state.W,state.H)*1.4);
-    ledLight.position.set(state.W*0.5, CH-0.35, state.H*0.5);
-    R3.ceiling.add(ledLight);
+    const l1=new THREE.PointLight(0xf4f7ff, 0.35, Math.max(state.W,state.H)*1.4);
+    l1.position.set(state.W*0.5, CH-0.4, state.H*0.5); R3.ceiling.add(l1);
   }
   scene.add(R3.ceiling);
 
@@ -1452,6 +1416,7 @@ function attachControls(dom, cam){
   };
   dom.onpointermove = e=>{
     if(!mode || e.pointerType==="touch") return;
+    R3.altKey = e.altKey;
     if(mode==="drag"){ dragPieceTo(e.clientX, e.clientY); return; }
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
     if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
@@ -1650,6 +1615,7 @@ function dragPieceTo(cx, cy){
   const it=g.userData.item;
   it.x=Math.round((p.x+R3.dragOff.dx)*20)/20;
   it.y=Math.round((p.z+R3.dragOff.dz)*20)/20;
+  snapItem(it, R3.altKey);
   g.position.set(it.x, it.elev||0, it.y);
   R3.dragMoved=true;
 }
@@ -1670,8 +1636,177 @@ function update3DPanel(){
   const g=R3.selGrp;
   if(!g){ p.style.display="none"; return; }
   const it=g.userData.item;
-  document.getElementById("sel3dName").textContent = `${it.name} · ${it.ang||0}°`;
+  document.getElementById("sel3dName").textContent = `${it.name} · ${it.ang||0}°${it.elev?` · ↑${(+it.elev).toFixed(2)} m`:""}`;
   p.style.display="flex";
+}
+
+/* ===== Deshacer / rehacer ===== */
+function applyStateJSON(json){
+  state = JSON.parse(json);
+  nextId = state.items.reduce((m,i)=>Math.max(m,i.id||0),0)+1;
+  selId = null;
+  try{ syncInputs(); }catch(e){}
+  render();
+  if (R3.on) build3D();
+}
+function undo(){
+  if (!undoStack.length) return;
+  redoStack.push(JSON.stringify(state));
+  const prev = undoStack.pop();
+  applyStateJSON(prev);
+  save({noHistory:true});
+}
+function redo(){
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(state));
+  const next = redoStack.pop();
+  applyStateJSON(next);
+  save({noHistory:true});
+}
+function updateUndoButtons(){
+  document.querySelectorAll(".undoBtn").forEach(b=>{ b.disabled=!undoStack.length; b.style.opacity=undoStack.length?1:0.4; });
+  document.querySelectorAll(".redoBtn").forEach(b=>{ b.disabled=!redoStack.length; b.style.opacity=redoStack.length?1:0.4; });
+}
+document.addEventListener("keydown", e=>{
+  const tag=(e.target && e.target.tagName)||"";
+  if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && (e.key==="z"||e.key==="Z") && !e.shiftKey){ e.preventDefault(); undo(); }
+  else if (mod && ((e.key==="z"||e.key==="Z") && e.shiftKey || e.key==="y"||e.key==="Y")){ e.preventDefault(); redo(); }
+});
+
+/* ===== Versiones en la nube (copias de seguridad por plano) ===== */
+function versionsRef(ref){ return (ref||docRef).collection("versiones"); }
+function saveVersion(json, tipo, ref){
+  ref = ref || docRef;
+  if (!ref || !json) return Promise.resolve();
+  let n=0; try{ n=JSON.parse(json).items.length; }catch(e){}
+  return versionsRef(ref).add({ state: json, t: Date.now(), tipo: tipo||"", n })
+    .then(()=>pruneVersions(ref))
+    .catch(e=>console.warn("version", e));
+}
+function pruneVersions(ref){
+  return versionsRef(ref).orderBy("t","desc").get().then(qs=>{
+    qs.docs.slice(40).forEach(d=>d.ref.delete());   // se guardan las 40 más recientes
+  });
+}
+function vaciarPlano(){
+  if (!confirm("¿Vaciar el plano?\n(Se guarda antes una versión por si quieres recuperarlo.)")) return;
+  saveVersion(JSON.stringify(state), "antes de vaciar");
+  state.items=[]; selId=null; save(); render(); if(R3.on) build3D();
+}
+function openVersions(){
+  const m=document.getElementById("verModal"), list=document.getElementById("verList");
+  m.style.display="flex"; list.textContent="Cargando…";
+  if (!docRef){ list.textContent="Sin conexión con la nube."; return; }
+  versionsRef().orderBy("t","desc").limit(40).get().then(qs=>{
+    if (!qs.docs.length){ list.innerHTML="Todavía no hay versiones de este plano. Se crea una automáticamente al editar, o pulsa «Guardar versión ahora»."; return; }
+    list.innerHTML = qs.docs.map(d=>{
+      const v=d.data(), f=new Date(v.t).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2c333d">
+        <span>${f} · ${v.n} piezas${v.tipo?` · <i style="color:#9aa3ad">${escHtml(v.tipo)}</i>`:""}</span>
+        <button style="width:auto;margin:0;padding:4px 10px" onclick="restoreVersion('${d.id}')">Restaurar</button></div>`;
+    }).join("");
+  }).catch(e=>{ list.textContent="No se pudieron leer las versiones: "+e.message; });
+}
+function closeVersions(){ document.getElementById("verModal").style.display="none"; }
+function saveVersionNow(){ saveVersion(JSON.stringify(state), "manual").then(openVersions); }
+function restoreVersion(id){
+  versionsRef().doc(id).get().then(d=>{
+    if (!d.exists) return;
+    if (!confirm("¿Restaurar esta versión? El estado actual se guarda antes como versión.")) return;
+    saveVersion(JSON.stringify(state), "antes de restaurar");
+    applyStateJSON(d.data().state);
+    save();                 // queda en el historial: se puede deshacer
+    closeVersions();
+  });
+}
+
+/* ===== Pedido: lo que falta por colocar ===== */
+const PEDIDO = {
+  "DF25 Smith 3en1":2, "DS02-A Jalón+Remo":1, "DH30A Abd/Add":1, "DS19A Ext+Femoral":1,
+  "DH98 Belt Squat":1, "DH91 Hip Thrust":1, "Remo T":1, "D-806 Inercial":1, "D-022W Cajón plio":1,
+  "DWX5 Cinta curva":1, "DK-701 Bici aire":1, "DK-669A Airbike":1, "DK-700A Ski erg":1,
+  "DF36 Banco ajust.":3, "DF62 Rack mancuernas":2, "DF64 Árbol discos":1, "DF65 Árbol discos":2,
+  "DB21 Cambia-discos":1, "DB81 Sop. búlgara":1
+};
+function palEntry(name){
+  for (const arr of Object.values(PAL)) for (const e of arr) if (e[0]===name) return e;
+  return null;
+}
+function addFromPedido(name){
+  const e=palEntry(name); if(!e) return;
+  addItem(e[0],e[1],e[2],e[3],e[4]);
+}
+function renderChecklist(){
+  const box=document.getElementById("checklist"); if(!box) return;
+  let total=0, puestos=0, rows="";
+  for (const [name,obj] of Object.entries(PEDIDO)){
+    const n=state.items.filter(i=>i.name===name).length;
+    total+=obj; puestos+=Math.min(n,obj);
+    const cls = n===obj ? "ok" : (n<obj ? "falta" : "sobra");
+    rows += `<div class="ck ${cls}" title="${n<obj?"Toca para añadir una":""}" onclick="${n<obj?`addFromPedido('${name.replace(/'/g,"\\'")}')`:""}"><span>${escHtml(name)}</span><b>${n}/${obj}</b></div>`;
+  }
+  box.innerHTML = `<div style="font-size:12px;margin-bottom:4px">Colocado <b style="color:${puestos===total?"#7bbf7e":"#d4af37"}">${puestos} de ${total}</b> piezas del pedido</div>
+    <details${puestos<total?" open":""}><summary style="font-size:11px;color:#9aa3ad;cursor:pointer">Ver detalle</summary>${rows}</details>`;
+}
+
+/* ===== Imán: pegar a paredes y alinear con piezas vecinas ===== */
+function bboxOf(it){
+  const c=corners(it);
+  return { x0:Math.min(...c.map(p=>p[0])), x1:Math.max(...c.map(p=>p[0])), y0:Math.min(...c.map(p=>p[1])), y1:Math.max(...c.map(p=>p[1])) };
+}
+function snapItem(it, altKey){
+  const cb=document.getElementById("snapOn");
+  if (!cb || !cb.checked || altKey || it.shape==="line") return;
+  const thr=0.15, b=bboxOf(it);
+  const hx0=it.x-b.x0, hx1=b.x1-it.x, hy0=it.y-b.y0, hy1=b.y1-it.y;
+  const cx=[], cy=[];
+  if (state.shape==="rect"){            // paredes del local
+    cx.push(hx0, state.W-hx1); cy.push(hy0, state.H-hy1);
+  }
+  for (const o of state.items){
+    if (o===it || o.shape==="line") continue;
+    const ob=bboxOf(o);
+    const solapaY = !(b.y1<ob.y0-0.05 || b.y0>ob.y1+0.05), solapaX = !(b.x1<ob.x0-0.05 || b.x0>ob.x1+0.05);
+    cx.push(ob.x0+hx0, ob.x1-hx1, o.x);                       // alinear bordes y centros
+    cy.push(ob.y0+hy0, ob.y1-hy1, o.y);
+    if (solapaY) cx.push(ob.x0-hx1, ob.x1+hx0);               // pegar de lado
+    if (solapaX) cy.push(ob.y0-hy1, ob.y1+hy0);
+  }
+  const best=(v,arr)=>{ let r=v, d=thr; for(const c of arr){ const dd=Math.abs(c-v); if(dd<d){ d=dd; r=c; } } return r; };
+  it.x=Math.round(best(it.x,cx)*1000)/1000;
+  it.y=Math.round(best(it.y,cy)*1000)/1000;
+}
+
+/* ===== Más acciones en el panel del 3D ===== */
+function addPiece3D(it){
+  const grp=buildMachine(it);
+  grp.position.set(it.x, it.elev||0, it.y);
+  grp.rotation.y=-(it.ang||0)*Math.PI/180;
+  grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  grp.userData.item=it; R3.pieces.push(grp); R3.scene.add(grp);
+  return grp;
+}
+function dup3D(){
+  const g=R3.selGrp; if(!g) return;
+  const it=g.userData.item;
+  const c={...it, id:nextId++, x:it.x+0.4, y:it.y+0.4};
+  state.items.push(c); save(); render();
+  select3D(addPiece3D(c));
+}
+function del3D(){
+  const g=R3.selGrp; if(!g) return;
+  const id=g.userData.item.id;
+  select3D(null);
+  R3.scene.remove(g); R3.pieces=R3.pieces.filter(p=>p!==g);
+  state.items=state.items.filter(i=>i.id!==id); selId=null; save(); render();
+}
+function elev3D(d){
+  const g=R3.selGrp; if(!g) return;
+  const it=g.userData.item;
+  it.elev=Math.max(0, Math.round(((it.elev||0)+d)*100)/100);
+  g.position.y=it.elev; save(); render(); update3DPanel();
 }
 
 function toggle3D(){
@@ -1690,6 +1825,7 @@ function toggle3D(){
     w2.style.display = "flex";
     btn.textContent = "Ver en 3D";
     cancelAnimationFrame(R3.raf);
+    render();
   }
 }
 window.addEventListener("resize", ()=>{ if(R3.on && R3.renderer){ const h=document.getElementById("view3d"); R3.cam.aspect=h.clientWidth/h.clientHeight; R3.cam.updateProjectionMatrix(); R3.renderer.setSize(h.clientWidth,h.clientHeight); } });
@@ -1703,5 +1839,15 @@ try{
   }
 }catch(e){}
 </script>
+<div id="verModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);align-items:center;justify-content:center;">
+  <div style="background:#1a1f26;border:1px solid #d4af37;border-radius:10px;padding:14px;width:min(420px,92vw);max-height:80vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <b style="color:#d4af37">Versiones de este plano</b>
+      <button onclick="closeVersions()" style="width:auto;margin:0;padding:4px 10px">✕</button>
+    </div>
+    <button onclick="saveVersionNow()" style="margin:0 0 8px">💾 Guardar versión ahora</button>
+    <div id="verList" style="font-size:12px">Cargando…</div>
+  </div>
+</div>
 </body>
 </html>
