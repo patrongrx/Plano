@@ -838,9 +838,47 @@ function hexToInt(c){ return parseInt((c||"#888888").replace("#",""),16); }
 /* ---- Constructor de estructura 3D por tipo de máquina ----
    Ejes locales del grupo: X = ancho (w) = FRENTE, Z = fondo (h), Y = altura.
    El grupo se centra en (0,0) y luego se posiciona/rota en la escena.       */
-const MAT_STEEL = ()=> new THREE.MeshStandardMaterial({ color:0x1c1c1f, roughness:0.55, metalness:0.4 });
+const MAT_STEEL = ()=> new THREE.MeshStandardMaterial({ color:0x0a0a0b, roughness:0.6, metalness:0.1 });
 const MAT_PAD   = ()=> new THREE.MeshStandardMaterial({ color:0x111114, roughness:0.9, metalness:0.05 });
-const MAT_BAR   = ()=> new THREE.MeshStandardMaterial({ color:0x9a9a9f, roughness:0.35, metalness:0.7 });
+const MAT_BAR   = ()=> new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughness:0.28, metalness:0.35 });
+// Pintado del equipamiento: todo negro, barras plateadas
+function paintModel(model, url){
+  if (/bano|entrada/i.test(url)) return;              // traen sus propias texturas
+  let mat;
+  if (/barra_olimpica/i.test(url)){
+    mat = new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughness:0.28, metalness:0.35 });
+  } else if (/barra_cargada/i.test(url)){
+    // barra plateada + discos negros: colorear vértices por distancia al eje largo
+    model.traverse(o=>{
+      if(!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+      const geo=o.geometry; geo.computeBoundingBox();
+      const bb=geo.boundingBox, sz=new THREE.Vector3(), c=new THREE.Vector3(); bb.getSize(sz); bb.getCenter(c);
+      const ax = sz.x>=sz.y && sz.x>=sz.z ? 0 : (sz.z>=sz.y ? 2 : 1);
+      const len=[sz.x,sz.y,sz.z][ax], thr=len*0.03;
+      const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
+      for(let i=0;i<pos.count;i++){
+        const v=[pos.getX(i)-c.x,pos.getY(i)-c.y,pos.getZ(i)-c.z]; v[ax]=0;
+        const r=Math.hypot(v[0],v[1],v[2]);
+        const k = r<=thr ? 0.82 : 0.07;
+        cols[i*3]=k; cols[i*3+1]=k*1.01; cols[i*3+2]=k*1.04;
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(cols,3));
+      o.material = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.35, metalness:0.3, flatShading:!geo.attributes.normal });
+    });
+    return;
+  } else if (/tarima/i.test(url)){
+    mat = new THREE.MeshStandardMaterial({ color:0x1b1b1d, roughness:0.9, metalness:0.02 });
+  } else if (/espejo/i.test(url)){
+    mat = new THREE.MeshStandardMaterial({ color:0xcfd8de, roughness:0.08, metalness:0.4 });
+  } else if (/columna/i.test(url)){
+    mat = new THREE.MeshStandardMaterial({ color:0xb8b6b0, roughness:0.95, metalness:0 });
+  } else {
+    mat = new THREE.MeshStandardMaterial({ color:0x0a0a0b, roughness:0.6, metalness:0.1 });
+  }
+  // sin normales (exportes Meshy/Draco) → sombreado plano, como hace GLTFLoader
+  const matFlat = mat.clone(); matFlat.flatShading = true;
+  model.traverse(o=>{ if(o.isMesh) o.material = (o.geometry && o.geometry.attributes.normal) ? mat : matFlat; });
+}
 
 function post(g, x, z, h, s, mat){ // poste vertical
   const geo = new THREE.BoxGeometry(s, h, s);
@@ -874,6 +912,7 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
   }
   gltfLoader().load(url, gltf=>{
     const model = gltf.scene;
+    paintModel(model, url);
     model.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
     // Meshy exporta de pie (Y = altura). NO tocar la vertical.
     let bb = new THREE.Box3().setFromObject(model);
@@ -1115,7 +1154,7 @@ function buildMachine(it){
   // === Tarima de peso muerto: losa lisa de 5 cm ===
   if (n.includes("tarima pm")){
     const H = 0.05;
-    box(g, 0, H/2, 0, w, H, d, new THREE.MeshStandardMaterial({ color:col, roughness:0.85, metalness:0.05 }));
+    box(g, 0, H/2, 0, w, H, d, new THREE.MeshStandardMaterial({ color:0x1b1b1d, roughness:0.9, metalness:0.02 }));
     return g;
   }
 
@@ -1168,8 +1207,8 @@ function buildMachine(it){
   // === Cardio (cinta/bici/ski): volumen más macizo, sí ocupa ===
   if (n.includes("cinta") || n.includes("bici") || n.includes("airbike") || n.includes("ski")){
     const H = itemHeight(it.name);
-    box(g, 0, 0.15, 0, w, 0.30, d, new THREE.MeshStandardMaterial({color:col,roughness:0.6})); // base
-    box(g, 0, H*0.6, d*0.35, w*0.8, H*0.9, 0.12, new THREE.MeshStandardMaterial({color:col,roughness:0.6})); // consola/mástil
+    box(g, 0, 0.15, 0, w, 0.30, d); // base
+    box(g, 0, H*0.6, d*0.35, w*0.8, H*0.9, 0.12); // consola/mástil
     return g;
   }
 
@@ -1177,7 +1216,7 @@ function buildMachine(it){
   // Estas SÍ son bastante macizas: caja + torre de placas.
   {
     const H = itemHeight(it.name);
-    const mat = new THREE.MeshStandardMaterial({ color:col, roughness:0.7, metalness:0.15 });
+    const mat = MAT_STEEL();
     box(g, 0, 0.12, 0, w, 0.24, d, mat);                       // chasis bajo
     box(g, w*0.30, H/2, -d*0.25, w*0.35, H, d*0.4, mat);       // torre de placas
     if (n.includes("jalón")||n.includes("jalon")||n.includes("remo")) box(g,0,H*0.9,d*0.2,0.6,0.1,0.1); // brazo alto
@@ -1518,13 +1557,15 @@ function toggleZoneColors(){
           if(m.userData._origColor===undefined){
             m.userData._origColor = m.color? m.color.getHex() : 0xffffff;
             m.userData._origMap = m.map || null;
+            m.userData._origVC = !!m.vertexColors;
           }
-          m.map = null;                    // quitar textura para que el color se vea puro
+          m.map = null; m.vertexColors = false;                    // quitar textura para que el color se vea puro
           if(m.color) m.color.setHex(col);
           m.needsUpdate = true;
         } else if(m.userData && m.userData._origColor!==undefined){
           if(m.color) m.color.setHex(m.userData._origColor);
           m.map = m.userData._origMap;
+          m.vertexColors = !!m.userData._origVC;
           m.needsUpdate = true;
         }
       });
