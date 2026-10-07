@@ -173,7 +173,9 @@
       <button onclick="rot(15)">↻ 15°</button>
       <button onclick="rot(90)">↻ 90°</button>
       <button onclick="dup()">⧉ Duplicar</button>
-      <button onclick="doorSel()" title="Cambia la puerta de lado/extremo (baño y sala)">🚪 Puerta</button>
+      <button onclick="doorSel()" title="Cambia la puerta de pared/extremo (baño y sala)">🚪 Puerta</button>
+      <button onclick="doorShiftSel(-0.10)" title="Desplazar puerta 10 cm">🚪◀</button>
+      <button onclick="doorShiftSel(0.10)" title="Desplazar puerta 10 cm">▶🚪</button>
       <button class="danger" onclick="del()">✕ Borrar</button>
     </div>
     <div class="row" style="max-width:560px; align-items:center; margin-top:6px">
@@ -195,7 +197,7 @@
     <button class="v3btn" onclick="elev3D(0.05)" title="Subir 5 cm">▲</button>
     <button class="v3btn" onclick="elev3D(-0.05)" title="Bajar 5 cm">▼</button>
     <button class="v3btn" onclick="dup3D()" title="Duplicar">⧉</button>
-    <button class="v3btn" id="door3dBtn" onclick="door3D()" title="Cambiar puerta de sitio">🚪</button>
+    <span id="door3dBox" style="display:contents"><button class="v3btn" onclick="door3D()" title="Cambiar puerta de pared">🚪</button><button class="v3btn" onclick="door3D(-0.10)" title="Desplazar puerta 10 cm">◀</button><button class="v3btn" onclick="door3D(0.10)" title="Desplazar puerta 10 cm">▶</button></span>
     <button class="v3btn" onclick="del3D()" title="Borrar" style="border-color:#7a2a2a">🗑</button>
     <button class="v3btn" onclick="select3D(null)" title="Soltar">✕</button>
   </div>
@@ -564,26 +566,44 @@ function dispColor(it){
   if (isSala(it) || isBanoHab(it)) return "#1e1e20";   // cuartos negros
   return it.color;
 }
-// Puerta al final de un lateral (lado largo). it.door 0..3 = [lado, extremo]
-const DOOR_POS=[[-1,-1],[-1,1],[1,-1],[1,1]];
+// Puerta: pared (top=-y, bottom=+y, left=-x, right=+x) + extremo (-1/+1) + desplazamiento manual it.doorShift (m)
+const DOOR_POS=[["left",-1],["left",1],["bottom",-1],["bottom",1],["right",-1],["right",1],["top",-1],["top",1]];
+function doorIdx(it){ return (it.door!=null && it.door>=0 && it.door<8) ? it.door : (isSala(it) ? 3 : 0); }
 function doorSpec(it){
-  const idx = (it.door!=null) ? it.door : (isSala(it) ? 3 : 0);
-  const [side,end]=DOOR_POS[((idx%4)+4)%4];
+  const [wall,end]=DOOR_POS[doorIdx(it)];
   const th=0.15, dw=0.90, hw=it.w/2, hh=it.h/2;
-  if (it.h >= it.w){   // laterales = paredes x=±hw, a lo largo de y
-    const c = end*Math.max(0, hh - th - dw/2 - 0.10);
-    return { along:'y', wallPos:side*hw, c, dw, th, side };
-  } else {             // laterales = paredes y=±hh, a lo largo de x
-    const c = end*Math.max(0, hw - th - dw/2 - 0.10);
-    return { along:'x', wallPos:side*hh, c, dw, th, side };
+  const along = (wall==="left"||wall==="right") ? 'y' : 'x';
+  const side  = (wall==="left"||wall==="top") ? -1 : 1;
+  const half  = along==='y' ? hh : hw;
+  const lim   = Math.max(0, half - th - dw/2 - 0.05);
+  const clamp = v=>Math.max(-lim, Math.min(lim, v));
+  let c = clamp(end*Math.max(0, half - th - dw/2 - 0.10) + (+it.doorShift||0));
+  // no dejar la puerta tapada por un mostrador: deslizarla hacia el centro de la pared
+  if (isBanoHab(it) && it.doorShift==null){
+    const ang=(it.ang||0)*Math.PI/180, co=Math.cos(ang), si=Math.sin(ang);
+    const G=(lx,ly)=>[it.x+lx*co-ly*si, it.y+lx*si+ly*co];
+    const obst=(state.items||[]).filter(o=>o!==it && /mostrador/i.test(o.name||"")).map(bboxOf);
+    const blocked=(cc)=>{ const out=side*( (along==='y'?hw:hh) + 0.35 );
+      for(const t of [-dw/2, 0, dw/2]){ const p = along==='y' ? G(out, cc+t) : G(cc+t, out);
+        if (obst.some(b=>p[0]>b.x0-0.05 && p[0]<b.x1+0.05 && p[1]>b.y0-0.05 && p[1]<b.y1+0.05)) return true; }
+      return false; };
+    let k=0; while (blocked(c) && k++<200){ const nc=c - end*0.05; if (Math.abs(nc)>lim+1e-9) break; c=nc; }
   }
+  return { along, wallPos: side*(along==='y'?hw:hh), c, dw, th, side };
 }
 function cycleDoor(it){
   if(!it || !hasDoor(it)) return;
-  const idx = (it.door!=null) ? it.door : (isSala(it) ? 3 : 0);
-  it.door = (idx+1)%4;
+  it.door = (doorIdx(it)+1)%8; delete it.doorShift;
   save(); render(); if (R3.on) build3D();
 }
+function shiftDoor(it, d){
+  if(!it || !hasDoor(it)) return;
+  const ds=doorSpec(it), [ ,end]=DOOR_POS[doorIdx(it)];
+  const base = end*Math.max(0, (ds.along==='y'?it.h:it.w)/2 - ds.th - ds.dw/2 - 0.10);
+  it.doorShift = Math.round((ds.c - base + d)*100)/100;
+  save(); render(); if (R3.on) build3D();
+}
+function doorShiftSel(d){ shiftDoor(getSel(), d); }
 function doorSel(){ cycleDoor(getSel()); }
 function dup(){ const it=getSel(); if(!it) return; const c={...it,id:nextId++,x:it.x+0.4,y:it.y+0.4}; state.items.push(c); selId=c.id; save(); render(); }
 function del(){ if(selId==null) return; state.items=state.items.filter(i=>i.id!==selId); selId=null; save(); render(); }
@@ -774,9 +794,11 @@ function render(full=true){
         const isDoorWall = (ds.along==='y' && o==='y' && Math.sign(pos+th/2)===ds.side) || (ds.along==='x' && o==='x' && Math.sign(pos+th/2)===ds.side);
         const L = o==='x'? it.w : it.h, from = o==='x'? -hw : -hh;
         const segs = isDoorWall ? [[from, ds.c-ds.dw/2],[ds.c+ds.dw/2, from+L]] : [[from, from+L]];
+        const glass = !isDoorWall && ((o==='x' && pos<0) || (o==='y' && pos>0));
+        const f = glass ? "#7fd4e8" : wallFill;
         for (const [a0,a1] of segs){ if(a1-a0<=0.001) continue;
-          g += o==='x' ? `<rect x="${a0}" y="${pos}" width="${a1-a0}" height="${th}" fill="${wallFill}"/>`
-                       : `<rect x="${pos}" y="${a0}" width="${th}" height="${a1-a0}" fill="${wallFill}"/>`; }
+          g += o==='x' ? `<rect x="${a0}" y="${pos}" width="${a1-a0}" height="${th}" fill="${f}"/>`
+                       : `<rect x="${pos}" y="${a0}" width="${th}" height="${a1-a0}" fill="${f}"/>`; }
       }
       g += (it.w>1.2 && it.h>1.0 ? `<text y="0" style="font-size:.30px">${it.name}</text>`:"");
       g += `</g>`;
@@ -1077,6 +1099,18 @@ function buildMachine(it){
       const L = o==='x'? w : d, from = o==='x'? -hw : -hd;
       const put=(a0,a1,y0,y1)=>{ if(a1-a0<=0.001||y1-y0<=0.001) return; const c=(a0+a1)/2, l=a1-a0, hy=(y0+y1)/2, hh=y1-y0;
         if(o==='x') box(g, c, hy, pos, l, hh, th, wallMat); else box(g, pos, hy, c, th, hh, l, wallMat); };
+      const glassWall = !bano && ((o==='x' && pos<0) || (o==='z' && pos>0));   // sala: cristalera trasera y derecha
+      if (!isDoorWall && glassWall){
+        const sillH=H*0.45, topH=H-0.30;
+        const glassMat=new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.18, roughness:0.05, metalness:0, side:THREE.DoubleSide });
+        put(from, from+L, 0, sillH); put(from, from+L, topH, H);
+        const c=(from+from+L)/2, gy=(sillH+topH)/2, gh=topH-sillH;
+        if(o==='x') box(g, c, gy, pos, L, gh, 0.04, glassMat); else box(g, pos, gy, c, 0.04, gh, L, glassMat);
+        // montantes de aluminio negro cada ~1 m
+        const nM=Math.max(1, Math.round(L/1.0));
+        for(let i=0;i<=nM;i++){ const a=from+i*L/nM; if(o==='x') box(g, Math.min(Math.max(a,from+0.03),from+L-0.03), gy, pos, 0.05, gh, 0.06, wallMat); else box(g, pos, gy, Math.min(Math.max(a,from+0.03),from+L-0.03), 0.06, gh, 0.05, wallMat); }
+        continue;
+      }
       if (!isDoorWall){ put(from, from+L, 0, H); continue; }
       put(from, ds.c-ds.dw/2, 0, H); put(ds.c+ds.dw/2, from+L, 0, H); put(ds.c-ds.dw/2, ds.c+ds.dw/2, dH, H); // dintel
       if (bano){   // hoja de puerta cerrada + manilla + cartel WC
@@ -1714,13 +1748,13 @@ function update3DPanel(){
   if(!g){ p.style.display="none"; return; }
   const it=g.userData.item;
   document.getElementById("sel3dName").textContent = `${it.name} · ${it.ang||0}°${it.elev?` · ↑${(+it.elev).toFixed(2)} m`:""}`;
-  const db=document.getElementById("door3dBtn"); if(db) db.style.display = hasDoor(it)? "" : "none";
+  const db=document.getElementById("door3dBox"); if(db) db.style.display = hasDoor(it)? "contents" : "none";
   p.style.display="flex";
 }
-function door3D(){
+function door3D(d){
   const g=R3.selGrp; if(!g) return;
   const id=g.userData.item.id;
-  cycleDoor(g.userData.item);
+  if (d) shiftDoor(g.userData.item, d); else cycleDoor(g.userData.item);
   const ng=R3.pieces.find(x=>x.userData.item && x.userData.item.id===id);
   if(ng) select3D(ng);
 }
