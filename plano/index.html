@@ -173,6 +173,7 @@
       <button onclick="rot(15)">↻ 15°</button>
       <button onclick="rot(90)">↻ 90°</button>
       <button onclick="dup()">⧉ Duplicar</button>
+      <button onclick="doorSel()" title="Cambia la puerta de lado/extremo (baño y sala)">🚪 Puerta</button>
       <button class="danger" onclick="del()">✕ Borrar</button>
     </div>
     <div class="row" style="max-width:560px; align-items:center; margin-top:6px">
@@ -194,6 +195,7 @@
     <button class="v3btn" onclick="elev3D(0.05)" title="Subir 5 cm">▲</button>
     <button class="v3btn" onclick="elev3D(-0.05)" title="Bajar 5 cm">▼</button>
     <button class="v3btn" onclick="dup3D()" title="Duplicar">⧉</button>
+    <button class="v3btn" id="door3dBtn" onclick="door3D()" title="Cambiar puerta de sitio">🚪</button>
     <button class="v3btn" onclick="del3D()" title="Borrar" style="border-color:#7a2a2a">🗑</button>
     <button class="v3btn" onclick="select3D(null)" title="Soltar">✕</button>
   </div>
@@ -552,6 +554,37 @@ function addCustom(){
 function getSel(){ return state.items.find(i=>i.id===selId); }
 function editSel(k,v){ const it=getSel(); if(!it) return; it[k]=+v||0; save(); render(); }
 function rot(d){ const it=getSel(); if(!it) return; it.ang=((it.ang||0)+d)%360; save(); render(); }
+// Colores reales de obra (independientes del color guardado en la pieza)
+function isBanoHab(it){ return /baño \(hab|bano \(hab/i.test(it.name||""); }
+function isSala(it){ return /sala|recinto/i.test(it.name||"") || it.shape==="room"; }
+function hasDoor(it){ return isBanoHab(it) || isSala(it); }
+function dispColor(it){
+  const n=(it.name||"").toLowerCase();
+  if (n.includes("columna")) return "#b3202a";          // pilares rojos
+  if (isSala(it) || isBanoHab(it)) return "#1e1e20";   // cuartos negros
+  return it.color;
+}
+// Puerta al final de un lateral (lado largo). it.door 0..3 = [lado, extremo]
+const DOOR_POS=[[-1,-1],[-1,1],[1,-1],[1,1]];
+function doorSpec(it){
+  const idx = (it.door!=null) ? it.door : (isSala(it) ? 3 : 0);
+  const [side,end]=DOOR_POS[((idx%4)+4)%4];
+  const th=0.15, dw=0.90, hw=it.w/2, hh=it.h/2;
+  if (it.h >= it.w){   // laterales = paredes x=±hw, a lo largo de y
+    const c = end*Math.max(0, hh - th - dw/2 - 0.10);
+    return { along:'y', wallPos:side*hw, c, dw, th, side };
+  } else {             // laterales = paredes y=±hh, a lo largo de x
+    const c = end*Math.max(0, hw - th - dw/2 - 0.10);
+    return { along:'x', wallPos:side*hh, c, dw, th, side };
+  }
+}
+function cycleDoor(it){
+  if(!it || !hasDoor(it)) return;
+  const idx = (it.door!=null) ? it.door : (isSala(it) ? 3 : 0);
+  it.door = (idx+1)%4;
+  save(); render(); if (R3.on) build3D();
+}
+function doorSel(){ cycleDoor(getSel()); }
 function dup(){ const it=getSel(); if(!it) return; const c={...it,id:nextId++,x:it.x+0.4,y:it.y+0.4}; state.items.push(c); selId=c.id; save(); render(); }
 function del(){ if(selId==null) return; state.items=state.items.filter(i=>i.id!==selId); selId=null; save(); render(); }
 
@@ -717,8 +750,10 @@ function render(full=true){
     const cls = "item" + (bad?" out":"") + (narrow?" narrow":"") + (it.id===selId?" sel":"");
     const tr = `transform="translate(${it.x} ${it.y}) rotate(${it.ang||0})"`;
     const ev = `data-id="${it.id}" onpointerdown="startDrag(event,${it.id})"`;
-    if (it.shape === "circle"){
-      g += `<g class="${cls}" ${tr} ${ev}><ellipse rx="${it.w/2}" ry="${it.h/2}" fill="${it.color}"/></g>`;
+    if (it.shape === "circle" && /columna/i.test(it.name||"")){   // pilar real: sección cuadrada, rojo
+      g += `<g class="${cls}" ${tr} ${ev}><rect x="${-it.w/2}" y="${-it.h/2}" width="${it.w}" height="${it.h}" fill="${dispColor(it)}"/></g>`;
+    } else if (it.shape === "circle"){
+      g += `<g class="${cls}" ${tr} ${ev}><ellipse rx="${it.w/2}" ry="${it.h/2}" fill="${dispColor(it)}"/></g>`;
     } else if (it.shape === "tri"){
       g += `<g class="${cls}" ${tr} ${ev}><polygon points="${-it.w/2},${-it.h/2} ${it.w/2},${-it.h/2} ${-it.w/2},${it.h/2}" fill="${it.color}" opacity="0.85"/>` +
            (it.w>1.2?`<text y="-0.1">${it.name}</text><text y="0.3" style="font-size:.26px">${(it.w*it.h/2).toFixed(1)} m²</text>`:"") + `</g>`;
@@ -731,28 +766,30 @@ function render(full=true){
       g += `<text x="${-0.15}" y="${0.15}" style="font-size:.26px">${it.name}</text>`;
       g += `</g>`;
     } else if (it.shape === "room"){
-      const th=0.15;                     // grosor de pared
-      const dw=Math.min(0.9, it.w*0.35); // ancho de puerta (en pared inferior)
-      const hw=it.w/2, hh=it.h/2;
-      // 4 paredes como rects; la inferior con hueco de puerta (dos tramos)
-      const wallFill=it.color;
+      const th=0.15, hw=it.w/2, hh=it.h/2, wallFill=dispColor(it), ds=doorSpec(it);
       g += `<g class="${cls}" ${tr} ${ev}>`;
       g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${it.h}" fill="#ffffff" fill-opacity="0.04"/>`; // interior hueco
-      g += `<rect x="${-hw}" y="${-hh}" width="${it.w}" height="${th}" fill="${wallFill}"/>`;           // arriba
-      g += `<rect x="${-hw}" y="${-hh}" width="${th}" height="${it.h}" fill="${wallFill}"/>`;           // izq
-      g += `<rect x="${hw-th}" y="${-hh}" width="${th}" height="${it.h}" fill="${wallFill}"/>`;         // der
-      // pared inferior partida (hueco de puerta centrado)
-      const seg=(it.w-dw)/2;
-      g += `<rect x="${-hw}" y="${hh-th}" width="${seg}" height="${th}" fill="${wallFill}"/>`;
-      g += `<rect x="${hw-seg}" y="${hh-th}" width="${seg}" height="${th}" fill="${wallFill}"/>`;
+      const walls=[ ['x',-hh],['x',hh-th],['y',-hw],['y',hw-th] ];   // [orientación, posición]
+      for (const [o,pos] of walls){
+        const isDoorWall = (ds.along==='y' && o==='y' && Math.sign(pos+th/2)===ds.side) || (ds.along==='x' && o==='x' && Math.sign(pos+th/2)===ds.side);
+        const L = o==='x'? it.w : it.h, from = o==='x'? -hw : -hh;
+        const segs = isDoorWall ? [[from, ds.c-ds.dw/2],[ds.c+ds.dw/2, from+L]] : [[from, from+L]];
+        for (const [a0,a1] of segs){ if(a1-a0<=0.001) continue;
+          g += o==='x' ? `<rect x="${a0}" y="${pos}" width="${a1-a0}" height="${th}" fill="${wallFill}"/>`
+                       : `<rect x="${pos}" y="${a0}" width="${th}" height="${a1-a0}" fill="${wallFill}"/>`; }
+      }
       g += (it.w>1.2 && it.h>1.0 ? `<text y="0" style="font-size:.30px">${it.name}</text>`:"");
       g += `</g>`;
     } else if (it.shape === "line"){
       g += `<g class="${cls}" ${tr} ${ev}><line x1="${-it.w/2}" y1="0" x2="${it.w/2}" y2="0" stroke="${it.color}" stroke-width="0.09"/><rect x="${-it.w/2}" y="-0.12" width="${it.w}" height="0.24" fill="transparent"/></g>`;
     } else {
       const showLbl = it.w>0.85 && it.h>0.55;
-      g += `<g class="${cls}" ${tr} ${ev}><rect x="${-it.w/2}" y="${-it.h/2}" width="${it.w}" height="${it.h}" rx="0.06" fill="${it.color}" opacity="1"/>` +
-           (showLbl?`<text y="0.05">${it.name}</text><text y="0.4" style="font-size:.24px">${it.w.toFixed(2)}×${it.h.toFixed(2)}</text>`:"") + `</g>`;
+      g += `<g class="${cls}" ${tr} ${ev}><rect x="${-it.w/2}" y="${-it.h/2}" width="${it.w}" height="${it.h}" rx="0.06" fill="${dispColor(it)}" opacity="1"/>` +
+           (isBanoHab(it) ? (()=>{ const ds=doorSpec(it); const t=0.12;
+              return ds.along==='y'
+                ? `<rect x="${ds.side>0? ds.wallPos-t : ds.wallPos}" y="${ds.c-ds.dw/2}" width="${t}" height="${ds.dw}" fill="#d4af37"/>`
+                : `<rect x="${ds.c-ds.dw/2}" y="${ds.side>0? ds.wallPos-t : ds.wallPos}" width="${ds.dw}" height="${t}" fill="#d4af37"/>`; })() : "") +
+           (showLbl?`<text y="0.05" ${isBanoHab(it)?'style="fill:#ddd"':''}>${it.name}</text><text y="0.4" style="font-size:.24px${isBanoHab(it)?';fill:#ddd':''}">${it.w.toFixed(2)}×${it.h.toFixed(2)}</text>`:"") + `</g>`;
     }
   }
   g += measureSVG();
@@ -802,8 +839,8 @@ function itemHeight(name){
   if (n.includes("ski")||n.includes("dk-700")) return 2.14;
   if (n.includes("airbike")||n.includes("dk-669")) return 1.23;
   if (n.includes("bici")||n.includes("dk-701")) return 1.00;
-  if (n.includes("sala")||n.includes("recinto")) return 2.30;
-  if (n.includes("baño (hab")||n.includes("bano (hab")) return 2.60;
+  if (n.includes("sala")||n.includes("recinto")) return 2.80;
+  if (n.includes("baño (hab")||n.includes("bano (hab")) return 2.80;
   if (n.includes("puerta")) return 2.05;
   if (n.includes("power rack rojo")) return 2.30;
   if (n.includes("remo t")) return 0.95;
@@ -871,7 +908,7 @@ function paintModel(model, url){
   } else if (/espejo/i.test(url)){
     mat = new THREE.MeshStandardMaterial({ color:0xcfd8de, roughness:0.08, metalness:0.4 });
   } else if (/columna/i.test(url)){
-    mat = new THREE.MeshStandardMaterial({ color:0xb8b6b0, roughness:0.95, metalness:0 });
+    mat = new THREE.MeshStandardMaterial({ color:0xb3202a, roughness:0.7, metalness:0.05 });
   } else {
     mat = new THREE.MeshStandardMaterial({ color:0x0a0a0b, roughness:0.6, metalness:0.1 });
   }
@@ -986,14 +1023,11 @@ const GLB_MAP = [
   ["df65",        "models/plate_tree.glb"],
   ["árbol",       "models/plate_tree.glb"],
   ["arbol",       "models/plate_tree.glb"],
-  ["columna",     "models/columna.glb"],
   ["barra cargada", "models/barra_cargada.glb"],
   ["barra olímpica","models/barra_olimpica.glb"],
   ["barra olimpica","models/barra_olimpica.glb"],
   ["tarima pm",   "models/tarima.glb"],
   ["espejo",      "models/espejo.glb"],
-  ["baño (habitación)","models/bano.glb"],
-  ["baño (hab","models/bano.glb"],
   ["power rack rojo","models/power_rack_rojo.glb"],
   ["remo t","models/remo_t.glb"],
   ["entrada baño","models/entrada_bano.glb"],
@@ -1029,38 +1063,40 @@ function buildMachine(it){
     return g;
   }
 
-  // === Sala / recinto: 4 paredes huecas con puerta, sin techo ===
-  if (n.includes("sala") || n.includes("recinto") || it.shape==="room"){
-    const th=0.15, H=2.30;               // grosor y altura de pared
-    const hw=w/2, hd=d/2;
-    const wallMat=new THREE.MeshStandardMaterial({ color:col, roughness:0.95, metalness:0.02 });
-    const glassMat=new THREE.MeshStandardMaterial({ color:0xdff0f5, transparent:true, opacity:0.18, roughness:0.05, metalness:0, side:THREE.DoubleSide });
-    // banda de ventanas: mitad superior (como la foto)
-    const sillH = H*0.45;                 // altura del antepecho (parte opaca baja)
-    const winH  = H - sillH - 0.12;       // franja de cristal
-    // helper: pared con ventana (banda alta de cristal) o ciega
-    function wallWin(cx,cy,cz, ww,wd, along){  // along: 'x' o 'z'
-      // antepecho opaco
-      if(along==='x') box(g, cx, sillH/2, cz, ww, sillH, th, wallMat);
-      else            box(g, cx, sillH/2, cz, th, sillH, wd, wallMat);
-      // franja de cristal
-      if(along==='x') box(g, cx, sillH+winH/2, cz, ww, winH, th, glassMat);
-      else            box(g, cx, sillH+winH/2, cz, th, winH, wd, glassMat);
-      // dintel fino arriba
-      if(along==='x') box(g, cx, H-0.06, cz, ww, 0.12, th, wallMat);
-      else            box(g, cx, H-0.06, cz, th, 0.12, wd, wallMat);
+  // === Sala / recinto y Baño: cuarto negro hasta el techo, hueco/puerta al final de un lateral ===
+  if (isSala(it) || isBanoHab(it)){
+    const th=0.15, H=WALL_H, hw=w/2, hd=d/2, ds=doorSpec(it);
+    const wallMat=new THREE.MeshStandardMaterial({ color:0x0d0d0f, roughness:1.0, metalness:0 });
+    const bano = isBanoHab(it);
+    const dH = 2.05;                                  // altura de puerta
+    // ds en coords 2D (x, y) → 3D (x, z)
+    const walls=[ ['x',-hd+th/2],['x',hd-th/2],['z',-hw+th/2],['z',hw-th/2] ];
+    for (const [o,pos] of walls){
+      const sideOfWall=Math.sign(pos);
+      const isDoorWall = (ds.along==='y' && o==='z' && sideOfWall===ds.side) || (ds.along==='x' && o==='x' && sideOfWall===ds.side);
+      const L = o==='x'? w : d, from = o==='x'? -hw : -hd;
+      const put=(a0,a1,y0,y1)=>{ if(a1-a0<=0.001||y1-y0<=0.001) return; const c=(a0+a1)/2, l=a1-a0, hy=(y0+y1)/2, hh=y1-y0;
+        if(o==='x') box(g, c, hy, pos, l, hh, th, wallMat); else box(g, pos, hy, c, th, hh, l, wallMat); };
+      if (!isDoorWall){ put(from, from+L, 0, H); continue; }
+      put(from, ds.c-ds.dw/2, 0, H); put(ds.c+ds.dw/2, from+L, 0, H); put(ds.c-ds.dw/2, ds.c+ds.dw/2, dH, H); // dintel
+      if (bano){   // hoja de puerta cerrada + manilla + cartel WC
+        const out = sideOfWall*(th/2+0.005);
+        const leafMat=new THREE.MeshStandardMaterial({ color:0x1a1a1d, roughness:0.8, metalness:0.05 });
+        const lw=ds.dw-0.04;
+        if(o==='x') box(g, ds.c, dH/2, pos, lw, dH-0.02, 0.05, leafMat); else box(g, pos, dH/2, ds.c, 0.05, dH-0.02, lw, leafMat);
+        const hx = ds.c - lw/2 + 0.08;
+        const silver=MAT_BAR(), white=new THREE.MeshStandardMaterial({ color:0xf2f2f2, roughness:0.5 });
+        if(o==='x'){ box(g, hx, 1.0, pos+out*2.2, 0.12, 0.025, 0.03, silver); box(g, ds.c, 1.55, pos+out*1.4, 0.12, 0.12, 0.01, white); }
+        else       { box(g, pos+out*2.2, 1.0, hx, 0.03, 0.025, 0.12, silver); box(g, pos+out*1.4, 1.55, ds.c, 0.01, 0.12, 0.12, white); }
+      }
     }
-    // TRASERA (z=-hd) → con ventanas
-    wallWin(0, 0, -hd+th/2, w, 0, 'x');
-    // DERECHA (x=+hw) → con ventanas
-    wallWin(hw-th/2, 0, 0, 0, d, 'z');
-    // IZQUIERDA (x=-hw) → ciega
-    box(g, -hw+th/2, H/2, 0, th, H, d, wallMat);
-    // FRONTAL (z=+hd) partida con puerta → ciega
-    const dw=Math.min(0.9, w*0.35), seg=(w-dw)/2;
-    box(g, -hw+seg/2, H/2, hd-th/2, seg, H, th, wallMat);
-    box(g,  hw-seg/2, H/2, hd-th/2, seg, H, th, wallMat);
-    box(g, 0, H-0.15, hd-th/2, dw, 0.30, th, wallMat);
+    if (bano) box(g, 0, H-0.01, 0, w, 0.02, d, wallMat);   // tapa (no se ve el interior)
+    return g;
+  }
+
+  // === Pilar: prisma rojo hasta el techo ===
+  if (n.includes("columna")){
+    box(g, 0, WALL_H/2, 0, w, WALL_H, d, new THREE.MeshStandardMaterial({ color:0x8a0c16, roughness:0.6, metalness:0.02 }));
     return g;
   }
 
@@ -1678,7 +1714,15 @@ function update3DPanel(){
   if(!g){ p.style.display="none"; return; }
   const it=g.userData.item;
   document.getElementById("sel3dName").textContent = `${it.name} · ${it.ang||0}°${it.elev?` · ↑${(+it.elev).toFixed(2)} m`:""}`;
+  const db=document.getElementById("door3dBtn"); if(db) db.style.display = hasDoor(it)? "" : "none";
   p.style.display="flex";
+}
+function door3D(){
+  const g=R3.selGrp; if(!g) return;
+  const id=g.userData.item.id;
+  cycleDoor(g.userData.item);
+  const ng=R3.pieces.find(x=>x.userData.item && x.userData.item.id===id);
+  if(ng) select3D(ng);
 }
 
 /* ===== Deshacer / rehacer ===== */
