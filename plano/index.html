@@ -885,7 +885,8 @@ function itemHeight(name){
   if (n.includes("estantería") || n.includes("estanteria")) return 1.36;
   if (n.includes("columna")) return 2.80;
   if (n.includes("banco")||n.includes("plano")) return 0.50;
-  if (n.includes("cajón")||n.includes("cajon")||n.includes("inercial")||n.includes("plio")) return 0.55;
+  if (n.includes("inercial")) return 0.84;
+  if (n.includes("cajón")||n.includes("cajon")||n.includes("plio")) return 0.60;
   if (n.includes("baño")||n.includes("almacén")||n.includes("almacen")) return 2.40;
   return 1.20;
 }
@@ -1125,6 +1126,51 @@ function buildMachine(it){
       }
     }
     if (bano) box(g, 0, H-0.01, 0, w, 0.02, d, wallMat);   // tapa (no se ve el interior)
+    return g;
+  }
+
+  // === Modelos genéricos (sin GLB): inercial, cajón, cambia-discos, búlgara ===
+  if (n.includes("inercial") || n.includes("d-806")){
+    const rub=MAT_PAD();
+    box(g, 0, 0.04, 0, w, 0.08, d);                                   // chasis plataforma
+    box(g, 0, 0.085, d*0.12, w-0.04, 0.01, d*0.70, rub);              // superficie de goma
+    box(g, 0, 0.17, -d/2+0.18, w, 0.34, 0.36);                        // carcasa del volante
+    const fw=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.20,0.05,32), new THREE.MeshStandardMaterial({color:0x2a2a2d,roughness:0.4,metalness:0.4}));
+    fw.position.set(0, 0.36, -d/2+0.18); g.add(fw);                   // volante de inercia
+    const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.07,16), MAT_BAR()); hub.position.copy(fw.position); g.add(hub);
+    const rope=new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.75,8), new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9}));
+    rope.position.set(0, 0.09+0.375, d*0.12); g.add(rope);            // cinta/cuerda
+    barX(g, 0, 0.84, d*0.12, 0.40, 0.015);                            // maneral
+    return g;
+  }
+  if (n.includes("cajón") || n.includes("cajon") || n.includes("plio")){
+    const H=itemHeight(it.name);
+    box(g, 0, H/2, 0, w, H, d, new THREE.MeshStandardMaterial({ color:0x141416, roughness:0.85, metalness:0.02 }));
+    const edge=new THREE.MeshStandardMaterial({ color:0x2a2a2d, roughness:0.7 });
+    box(g, 0, H-0.005, 0, w-0.06, 0.01, d-0.06, MAT_PAD());            // tapa antideslizante
+    for (const sx of [-1,1]) box(g, sx*(w/2+0.003), H*0.75, 0, 0.006, 0.05, 0.14, edge); // asideros
+    return g;
+  }
+  if (n.includes("cambia") || n.includes("db21")){
+    const H=itemHeight(it.name);
+    box(g, 0, 0.04, 0, w*0.35, 0.08, d);                               // carril base
+    box(g, 0, 0.04, -d/2+0.05, w, 0.08, 0.10);                         // pie trasero
+    box(g, 0, 0.04,  d/2-0.05, w*0.7, 0.08, 0.10);                      // pie delantero
+    box(g, 0, 0.15, -d*0.25, 0.08, 0.22, 0.08);                        // pivote
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,Math.hypot(H-0.15,d*0.7)), MAT_STEEL());
+    arm.position.set(0, (0.15+H)/2, -d*0.25+d*0.35); arm.rotation.x=-Math.atan2(H-0.15, d*0.7); g.add(arm); // palanca
+    const hook=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.10,16), MAT_BAR());
+    hook.rotation.z=Math.PI/2; hook.position.set(0, 0.30, -d*0.25); g.add(hook);  // gancho para la barra
+    box(g, 0, H, d*0.45, 0.14, 0.04, 0.04, MAT_PAD());                 // empuñadura
+    return g;
+  }
+  if (n.includes("búlgara") || n.includes("bulgara") || n.includes("db81")){
+    const H=itemHeight(it.name);
+    box(g, 0, 0.03, 0, w, 0.06, d*0.35);                               // pie transversal
+    box(g, 0, 0.03, 0, 0.08, 0.06, d);                                 // pie longitudinal
+    box(g, 0, H/2, -d*0.25, 0.07, H, 0.07);                            // poste
+    const roll=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.075,0.32,24), MAT_PAD());
+    roll.rotation.z=Math.PI/2; roll.position.set(0, H, -d*0.25); g.add(roll);  // rodillo
     return g;
   }
 
@@ -1843,10 +1889,10 @@ function restoreVersion(id){
 
 /* ===== Pedido: lo que falta por colocar ===== */
 const PEDIDO = {
-  "DF25 Smith 3en1":2, "DS02-A Jalón+Remo":1, "DH30A Abd/Add":1, "DS19A Ext+Femoral":1,
+  "DF25 Smith 3en1":1, "DS02-A Jalón+Remo":1, "DH30A Abd/Add":1, "DS19A Ext+Femoral":1,
   "DH98 Belt Squat":1, "DH91 Hip Thrust":1, "Remo T":1, "D-806 Inercial":1, "D-022W Cajón plio":1,
   "DWX5 Cinta curva":1, "DK-701 Bici aire":1, "DK-669A Airbike":1, "DK-700A Ski erg":1,
-  "DF36 Banco ajust.":3, "DF62 Rack mancuernas":2, "DF64 Árbol discos":1, "DF65 Árbol discos":2,
+  "DF36 Banco ajust.":2, "DF62 Rack mancuernas":2, "DF64 Árbol discos":1, "DF65 Árbol discos":2,
   "DB21 Cambia-discos":1, "DB81 Sop. búlgara":1
 };
 function palEntry(name){
