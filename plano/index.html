@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Planificador — Patrón Strength</title>
 <style>
+  body.ro #side, body.ro #main > .row:not(.ro-keep), body.ro #selInfo, body.ro #view3d .undoBtn, body.ro #view3d .redoBtn, body.ro #lockBtn, body.ro #sel3d { display:none !important; }
+  #roBadge{ display:none; } body.ro #roBadge{ display:inline-block; }
   :root{ --bg:#111418; --panel:#1a1f26; --gold:#d4af37; --line:#2c333d; --txt:#e8e6e0; }
   *{ box-sizing:border-box; margin:0; padding:0; }
   body{ background:var(--bg); color:var(--txt); font-family:Arial,Helvetica,sans-serif; font-size:13px; }
@@ -65,7 +67,8 @@
 </div>
 <header>
   <h1>PATRÓN STRENGTH — PLANIFICADOR</h1>
-  <span class="meta">Nave · medidas reales de catálogo</span>
+  <span class="meta" id="hdrMeta">Nave · medidas reales de catálogo</span>
+  <span id="roBadge" style="margin-left:8px;font-size:11px;color:#111;background:#9aa3ad;border-radius:4px;padding:2px 8px">👁 Solo lectura</span>
   <button id="btn3d" onclick="toggle3D()" style="flex:none;width:auto;margin:0 0 0 auto;padding:6px 14px;background:#d4af37;color:#111;font-weight:bold;">Ver en 3D</button>
 </header>
 <div class="wrap">
@@ -84,6 +87,7 @@
         <button onclick="renamePlano()">✎ Renombrar</button>
         <button class="danger" onclick="removePlano()">🗑 Quitar</button>
       </div>
+      <button onclick="shareReadOnly()" title="Enlace para enseñar este plano sin poder modificarlo" style="margin-bottom:8px">🔗 Enlace de solo lectura</button>
       <div class="row">
         <div><label>Ancho (m)</label><input type="number" id="inW" step="0.1" min="4"></div>
         <div><label>Fondo (m)</label><input type="number" id="inH" step="0.1" min="4"></div>
@@ -177,7 +181,7 @@
       <button onclick="doorShiftSel(0.10)" title="Desplazar puerta 10 cm">▶🚪</button>
       <button class="danger" onclick="del()">✕ Borrar</button>
     </div>
-    <div class="row" style="max-width:560px; align-items:center; margin-top:6px">
+    <div class="row ro-keep" style="max-width:560px; align-items:center; margin-top:6px">
       <label style="flex:none; margin:0 6px 0 0">🔍 Zoom</label>
       <input type="range" id="zoom" min="40" max="160" value="100" style="flex:1" oninput="setZoom(this.value)">
       <button style="flex:none; width:auto; margin:0 0 0 6px; padding:4px 10px" onclick="document.getElementById('zoom').value=100; setZoom(100)">Ajustar</button>
@@ -200,7 +204,7 @@
     <button class="v3btn" onclick="del3D()" title="Borrar" style="border-color:#7a2a2a">🗑</button>
     <button class="v3btn" onclick="select3D(null)" title="Soltar">✕</button>
   </div>
-  <div id="hint3d" style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;max-width:46%;"></div>
+  <div id="hint3d" style="position:absolute;bottom:10px;right:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;max-width:40%;text-align:right;"></div>
   <div id="joy" style="display:none;position:absolute;left:22px;bottom:26px;z-index:8;width:120px;height:120px;border-radius:50%;background:rgba(20,24,30,.55);border:2px solid rgba(212,175,55,.7);touch-action:none;">
     <div id="joyKnob" style="position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(212,175,55,.85);pointer-events:none;"></div>
   </div>
@@ -226,6 +230,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 "use strict";
+// ?ver=<plano> abre ese plano en modo solo lectura (sin contraseña, sin edición)
+const RO_KEY = (()=>{ try{ return new URLSearchParams(location.search).get("ver"); }catch(e){ return null; } })();
+const READONLY = !!RO_KEY;
 const PAL = {
   palChina: [
     ["DF25 Smith 3en1", 2.35, 2.05, "#d4af37"],
@@ -291,7 +298,7 @@ function switchLocal(key){
   if(!key) return;
   flushSave();                       // guarda lo pendiente del plano anterior ANTES de cambiar
   currentLocal = key;
-  try{ localStorage.setItem("patron_plano_actual", key); }catch(e){}
+  if(!READONLY){ try{ localStorage.setItem("patron_plano_actual", key); }catch(e){} }
   const p = LOCALES[key] || LOCALES.nave;
   // preset base (los items se cargan de la nube por onSnapshot)
   state = { W:p.W, H:p.H, declared:p.declared, shape:p.shape, items:[] };
@@ -316,6 +323,8 @@ function switchLocal(key){
           render();
           if(R3.on){ build3D(); }
           applyingRemote = false;
+          preloadModels();
+          if(READONLY && !R3.on && !R3.roOpened){ R3.roOpened=true; toggle3D(); }   // el cliente entra directo al 3D
           return;
         }
       }
@@ -349,7 +358,8 @@ function initCloud(){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     cloudReady = true;
-    try{ const last=localStorage.getItem("patron_plano_actual"); if(last) currentLocal=last; }catch(e){}
+    if (READONLY) currentLocal = RO_KEY;
+    else { try{ const last=localStorage.getItem("patron_plano_actual"); if(last) currentLocal=last; }catch(e){} }
     listenIndex();
     // suscribirse al plano actualmente seleccionado
     switchLocal(currentLocal);
@@ -366,6 +376,7 @@ function listenIndex(){
       try{ const l=JSON.parse(snap.data().list); if(Array.isArray(l) && l.length) PLANOS=l; }catch(e){}
     }
     renderPlanoSelect();
+    if(READONLY){ const m=document.getElementById("hdrMeta"); if(m) m.textContent=currentPlanoName(); return; }
     if(!PLANOS.some(p=>p.key===currentLocal)) switchLocal(PLANOS[0].key);   // el actual fue quitado
   }, err=>console.warn("indice planos:", err));
 }
@@ -405,6 +416,13 @@ function removePlano(){
   saveIndex(); renderPlanoSelect(); switchLocal(PLANOS[0].key);
 }
 
+function shareReadOnly(){
+  flushSave();
+  const url = location.origin + location.pathname + "?ver=" + encodeURIComponent(currentLocal);
+  const ok = ()=>alert("Enlace de solo lectura copiado:\n\n" + url + "\n\nQuien lo abra verá «" + currentPlanoName() + "» en 2D y 3D (con paseo), sin contraseña y sin botones de edición.");
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(ok, ()=>prompt("Copia este enlace:", url));
+  else prompt("Copia este enlace:", url);
+}
 function forgetDevice(){
   try{ localStorage.removeItem("patron_auth"); }catch(e){}
   location.reload();
@@ -593,6 +611,7 @@ let pendingSave = null;
 let undoStack = [], redoStack = [], lastSavedJSON = null, lastVersionAt = 0;
 const VERSION_EVERY = 10*60*1000;     // una copia automática cada 10 min de edición
 function save(opts){
+  if (READONLY) return;                 // solo lectura: nunca se guarda
   opts = opts || {};
   const cur = JSON.stringify(state);
   if (!applyingRemote){
@@ -676,7 +695,7 @@ function svgPoint(ev){
   return pt.matrixTransform(svg.getScreenCTM().inverse());
 }
 function startDrag(ev,id){
-  if(measureMode) return;
+  if(measureMode || READONLY) return;
   ev.preventDefault();
   ev.stopPropagation();
   selId = id;
@@ -688,9 +707,14 @@ function startDrag(ev,id){
   // guarda el nodo <g> de la pieza para moverlo en vivo sin redibujar todo
   drag.node = document.querySelector('.item[data-id="'+id+'"]');
 }
+let _dragRAF = 0, _dragEv = null;
 function moveDrag(ev){
   if(!drag) return;
   ev.preventDefault();
+  _dragEv = { clientX:ev.clientX, clientY:ev.clientY, altKey:ev.altKey };
+  if(!_dragRAF) _dragRAF = requestAnimationFrame(()=>{ _dragRAF=0; if(drag && _dragEv) applyDrag(_dragEv); });
+}
+function applyDrag(ev){
   const it = state.items.find(i=>i.id===drag.id); if(!it) return;
   const p = svgPoint(ev);
   it.x = Math.round((p.x+drag.dx)*20)/20;
@@ -704,7 +728,14 @@ function moveDrag(ev){
     render(false);
   }
 }
-function endDrag(){ if(drag){ drag=null; save(); render(); } }
+function endDrag(){
+  if(!drag) return;
+  if(_dragRAF){ cancelAnimationFrame(_dragRAF); _dragRAF=0; if(_dragEv) applyDrag(_dragEv); }   // aplicar la última posición
+  _dragEv=null;
+  const moved = drag.moved; drag=null;
+  if(moved) save();
+  render();
+}
 
 
 function render(full=true){
@@ -952,6 +983,17 @@ function getGLB(url){
   });
   return GLB_CACHE[url];
 }
+// descarga en segundo plano los modelos del plano mientras se trabaja en 2D → el 3D abre al instante
+let _preT = 0;
+function preloadModels(){
+  if (typeof THREE==="undefined" || !THREE.GLTFLoader) return;
+  clearTimeout(_preT);
+  _preT = setTimeout(()=>{
+    const urls = [...new Set(state.items.map(i=>glbFor(i.name)).filter(Boolean))];
+    const go = ()=>{ const u=urls.shift(); if(!u) return; getGLB(u).catch(()=>{}).then(()=>setTimeout(go, 30)); };   // de uno en uno, sin bloquear
+    (window.requestIdleCallback || (f=>setTimeout(f,0)))(go);
+  }, 800);
+}
 function loadGLB(g, url, targetW, targetD, targetH, uniform){
   if (typeof THREE.GLTFLoader === "undefined"){
     console.warn("GLTFLoader no disponible");
@@ -960,7 +1002,7 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
   }
   getGLB(url).then(src=>{
     const model = src.clone(true);
-    R3.dirty = true;
+    R3.dirty = true; R3.shadowDirty = true;
     // Meshy exporta de pie (Y = altura). NO tocar la vertical.
     let bb = new THREE.Box3().setFromObject(model);
     let size = new THREE.Vector3(); bb.getSize(size);
@@ -1338,7 +1380,7 @@ function build3D(){
     renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.shadowMap.autoUpdate = true;
+    renderer.shadowMap.autoUpdate = false;           // las sombras se recalculan solo si cambian las piezas
     if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95; }
     if ("outputEncoding" in renderer && THREE.sRGBEncoding!==undefined) renderer.outputEncoding = THREE.sRGBEncoding;
     host.appendChild(renderer.domElement);
@@ -1512,13 +1554,14 @@ function build3D(){
   }
   applyCam(cam);
 
-  R3.scene=scene; R3.cam=cam; R3.renderer=renderer; R3.dirty=true;
+  R3.scene=scene; R3.cam=cam; R3.renderer=renderer; R3.dirty=true; R3.shadowDirty=true;
   updateWalls(); updateCeiling();
 
   cancelAnimationFrame(R3.raf);
   let _t=performance.now();
   (function loop(){ R3.raf = requestAnimationFrame(loop); const t=performance.now(), dt=Math.min(0.1,(t-_t)/1000); _t=t;
     if(R3.walk) walkStep(dt);
+    if(R3.shadowDirty){ renderer.shadowMap.needsUpdate=true; R3.shadowDirty=false; R3.dirty=true; }
     if(!R3.dirty) return;                       // sin cambios: no se redibuja (ahorra batería/CPU)
     R3.dirty=false;
     if(R3.selBox) R3.selBox.update(); renderer.render(scene, cam); })();
@@ -1632,9 +1675,10 @@ function attachControls(dom){
 
 /* ===== Bloqueo de edición y modo paseo (vista de persona) ===== */
 const EYE_H = 1.65;                         // altura de los ojos (m)
-try{ R3.editLock = localStorage.getItem("patron_lock3d")!=="0"; }catch(e){ R3.editLock = true; }
+try{ R3.editLock = READONLY || localStorage.getItem("patron_lock3d")!=="0"; }catch(e){ R3.editLock = true; }
 R3.walk = null; R3.keys = {}; R3.joy = {x:0, y:0};
 function toggleEditLock(){
+  if (READONLY) return;
   R3.editLock = !R3.editLock;
   try{ localStorage.setItem("patron_lock3d", R3.editLock?"1":"0"); }catch(e){}
   if (R3.editLock) select3D(null);
@@ -1648,7 +1692,8 @@ function updateModeUI(){
   const h=document.getElementById("hint3d");
   if(h) h.innerHTML = R3.walk
     ? "🚶 Joystick / WASD = andar · arrastrar = mirar · toca el suelo = ir allí"
-    : (R3.editLock
+    : (READONLY ? "👁 Arrastrar = girar · 2 dedos / rueda = zoom · 🚶 Paseo para recorrerlo por dentro"
+      : R3.editLock
       ? "🔒 Navegación: arrastrar = girar · 2 dedos / rueda = zoom · Shift o clic dcho. = desplazar. Pulsa 🔒 para editar piezas."
       : "✋ Edición: toca una máquina y arrástrala para moverla · vacío = girar · 2 dedos = zoom/mover");
 }
@@ -1911,7 +1956,7 @@ function dragPieceTo(cx, cy){
   it.y=Math.round((p.z+R3.dragOff.dz)*20)/20;
   snapItem(it, R3.altKey);
   g.position.set(it.x, it.elev||0, it.y);
-  R3.dragMoved=true;
+  R3.dragMoved=true; R3.shadowDirty=true;
 }
 function endPieceDrag(){
   if(R3.dragMoved){ save(); render(); }
@@ -1922,7 +1967,7 @@ function rot3D(d){
   const g=R3.selGrp; if(!g) return;
   const it=g.userData.item;
   it.ang=(((it.ang||0)+d)%360+360)%360;
-  g.rotation.y=-it.ang*Math.PI/180;
+  g.rotation.y=-it.ang*Math.PI/180; R3.shadowDirty=true;
   save(); render(); update3DPanel();
 }
 function update3DPanel(){
@@ -1952,6 +1997,7 @@ function applyStateJSON(json){
   if (R3.on) build3D();
 }
 function undo(){
+  if (READONLY) return;
   if (!undoStack.length) return;
   redoStack.push(JSON.stringify(state));
   const prev = undoStack.pop();
@@ -1959,6 +2005,7 @@ function undo(){
   save({noHistory:true});
 }
 function redo(){
+  if (READONLY) return;
   if (!redoStack.length) return;
   undoStack.push(JSON.stringify(state));
   const next = redoStack.pop();
@@ -2087,7 +2134,7 @@ function addPiece3D(it){
   grp.position.set(it.x, it.elev||0, it.y);
   grp.rotation.y=-(it.ang||0)*Math.PI/180;
   grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
-  grp.userData.item=it; R3.pieces.push(grp); R3.scene.add(grp);
+  grp.userData.item=it; R3.pieces.push(grp); R3.scene.add(grp); R3.shadowDirty=true;
   return grp;
 }
 function dup3D(){
@@ -2101,14 +2148,14 @@ function del3D(){
   const g=R3.selGrp; if(!g) return;
   const id=g.userData.item.id;
   select3D(null);
-  R3.scene.remove(g); R3.pieces=R3.pieces.filter(p=>p!==g);
+  R3.scene.remove(g); R3.pieces=R3.pieces.filter(p=>p!==g); R3.shadowDirty=true;
   state.items=state.items.filter(i=>i.id!==id); selId=null; save(); render();
 }
 function elev3D(d){
   const g=R3.selGrp; if(!g) return;
   const it=g.userData.item;
   it.elev=Math.max(0, Math.round(((it.elev||0)+d)*100)/100);
-  g.position.y=it.elev; save(); render(); update3DPanel();
+  g.position.y=it.elev; R3.shadowDirty=true; save(); render(); update3DPanel();
 }
 
 function toggle3D(){
@@ -2133,10 +2180,16 @@ function toggle3D(){
 }
 window.addEventListener("resize", ()=>{ if(R3.on && R3.renderer){ const h=document.getElementById("view3d"); R3.cam.aspect=h.clientWidth/h.clientHeight; R3.cam.updateProjectionMatrix(); R3.renderer.setSize(h.clientWidth,h.clientHeight); } });
 
-load(); buildPalettes(); syncInputs(); render();
+if (READONLY){
+  document.body.classList.add("ro");
+  document.getElementById("lockScreen").style.display = "none";
+  buildPalettes(); syncInputs(); render();
+  initCloud();
+}
+else { load(); buildPalettes(); syncInputs(); render(); }
 // dispositivo recordado: entrar sin pedir contraseña
 try{
-  if(localStorage.getItem("patron_auth") === PASSWORD){
+  if(!READONLY && localStorage.getItem("patron_auth") === PASSWORD){
     document.getElementById("lockScreen").style.display = "none";
     initCloud();
   }
