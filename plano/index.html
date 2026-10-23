@@ -88,8 +88,7 @@
         <div><label>Ancho (m)</label><input type="number" id="inW" step="0.1" min="4"></div>
         <div><label>Fondo (m)</label><input type="number" id="inH" step="0.1" min="4"></div>
       </div>
-      <label>Forma</label>
-      <select id="inShape">
+      <select id="inShape" style="display:none">
         <option value="rect">Rectángulo</option>
       </select>
       <div id="stats"></div>
@@ -201,10 +200,13 @@
     <button class="v3btn" onclick="del3D()" title="Borrar" style="border-color:#7a2a2a">🗑</button>
     <button class="v3btn" onclick="select3D(null)" title="Soltar">✕</button>
   </div>
-  <div style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;">
-    Toca una máquina y arrástrala para moverla · vacío = girar · 2 dedos = zoom/mover · Shift+arrastrar = desplazar
+  <div id="hint3d" style="position:absolute;top:10px;left:10px;z-index:5;font-size:11px;color:#9aa3ad;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:6px;line-height:1.5;max-width:46%;"></div>
+  <div id="joy" style="display:none;position:absolute;left:22px;bottom:26px;z-index:8;width:120px;height:120px;border-radius:50%;background:rgba(20,24,30,.55);border:2px solid rgba(212,175,55,.7);touch-action:none;">
+    <div id="joyKnob" style="position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(212,175,55,.85);pointer-events:none;"></div>
   </div>
   <div style="position:absolute;top:10px;right:10px;z-index:6;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+    <button onclick="toggleWalk()" id="walkBtn" class="v3btn" title="Recorrer el local a la altura de una persona">🚶 Paseo</button>
+    <button onclick="toggleEditLock()" id="lockBtn" class="v3btn" title="Bloquea mover piezas mientras navegas">🔒 Bloqueado</button>
     <button onclick="undo()" class="v3btn undoBtn" title="Deshacer">↶</button>
     <button onclick="redo()" class="v3btn redoBtn" title="Rehacer">↷</button>
     <button onclick="setView('planta')" class="v3btn">Planta</button>
@@ -265,20 +267,15 @@ const PAL = {
   ],
   palZonas: [
     ["Línea suelo (blanca)", 3.00, 0.06, "#f2f2f2", "rect"],
-    ["Tarima PM 0.5×2", 2.00, 0.50, "#8a6d3b", "rect"],
-    ["Césped 3×1", 3.00, 1.00, "#4a7a3a", "rect"],
     ["Sala / recinto", 3.00, 2.50, "#8a8f96", "room"],
     ["Baño (habitación)", 2.00, 2.00, "#6b7078", "rect"],
     ["Puerta", 0.90, 0.15, "#8a6d4a", "rect"],
     ["Mostrador L", 1.65, 1.20, "#a0784e", "L"],
     ["Tarima PM 1×2", 2.00, 1.00, "#8a6d3b", "rect"],
     ["Columna Ø50", 0.50, 0.50, "#333b44", "circle"],
-    ["Entrada (cubículo)", 1.00, 1.00, "#9c8a6a", "rect"],
-    ["Entrada baño", 1.50, 2.15, "#9c8a6a", "rect"],
     ["Espejo pequeño 1m", 1.00, 0.05, "#afd0d8", "rect"],
     ["Espejo pared 1.9m", 1.90, 0.05, "#afd0d8", "rect"],
-    ["Espejo grande 3m", 3.00, 0.05, "#afd0d8", "rect"],
-    ["Cristalera (línea 1 m)", 1.00, 0.05, "#7fd4e8", "line"]
+    ["Espejo grande 3m", 3.00, 0.05, "#afd0d8", "rect"]
   ]
 };
 let state = { W:11, H:14, declared:154, shape:"rect", items:[] };
@@ -426,25 +423,9 @@ function tryUnlock(){
 
 function getOutline(){
   const {W,H,shape} = state;
-  if (shape === "rect"){
-    const pts = [[0,0],[W,0],[W,H],[0,H]];
-    return { d:`M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`, pts };
-  }
-  if (shape === "curva"){
-    const pts = [[0,0],[W,0]];
-    for (let i=1;i<=24;i++){ const t=(i/24)*Math.PI/2; pts.push([W*Math.cos(t), H*Math.sin(t)]); }
-    return { d:`M 0 0 L ${W} 0 A ${W} ${H} 0 0 1 0 ${H} Z`, pts };
-  }
-  // Cuña real: medianera izq · tramo superior ESTRECHO (baño/almacén) · diagonal vecino hasta la punta · arco de ventanas hasta la entrada
-  const A=[0,0], B=[0.40*W,0], C=[W,0.42*H], ctrl=[0.88*W,1.04*H], D=[0.12*W,0.97*H], E=[0,0.97*H];
-  const pts=[A,B,C];
-  for (let i=1;i<=24;i++){
-    const t=i/24, u=1-t;
-    pts.push([u*u*C[0]+2*u*t*ctrl[0]+t*t*D[0], u*u*C[1]+2*u*t*ctrl[1]+t*t*D[1]]);
-  }
-  pts.push(E);
-  const d = `M ${A[0]} ${A[1]} L ${B[0]} ${B[1]} L ${C[0]} ${C[1]} Q ${ctrl[0]} ${ctrl[1]} ${D[0]} ${D[1]} L ${E[0]} ${E[1]} Z`;
-  return { d, pts };
+  // (solo rectángulo: las formas del local antiguo se eliminaron)
+  const pts = [[0,0],[W,0],[W,H],[0,H]];
+  return { d:`M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`, pts };
 }
 
 function polyArea(pts){
@@ -774,9 +755,6 @@ function render(full=true){
       g += `<g class="${cls}" ${tr} ${ev}><rect x="${-it.w/2}" y="${-it.h/2}" width="${it.w}" height="${it.h}" fill="${dispColor(it)}"/></g>`;
     } else if (it.shape === "circle"){
       g += `<g class="${cls}" ${tr} ${ev}><ellipse rx="${it.w/2}" ry="${it.h/2}" fill="${dispColor(it)}"/></g>`;
-    } else if (it.shape === "tri"){
-      g += `<g class="${cls}" ${tr} ${ev}><polygon points="${-it.w/2},${-it.h/2} ${it.w/2},${-it.h/2} ${-it.w/2},${it.h/2}" fill="${it.color}" opacity="0.85"/>` +
-           (it.w>1.2?`<text y="-0.1">${it.name}</text><text y="0.3" style="font-size:.26px">${(it.w*it.h/2).toFixed(1)} m²</text>`:"") + `</g>`;
     } else if (it.shape === "L"){
       const t=0.45, hw=it.w/2, hh=it.h/2;
       g += `<g class="${cls}" ${tr} ${ev}>`;
@@ -866,9 +844,7 @@ function itemHeight(name){
   if (n.includes("puerta")) return 2.05;
   if (n.includes("power rack rojo")) return 2.30;
   if (n.includes("remo t")) return 0.95;
-  if (n.includes("césped")||n.includes("cesped")) return 0.03;
   if (n.includes("tarima pm")) return 0.07;
-  if (n.includes("entrada")) return 2.80;   // cubículo entrada / baño: hasta el techo
   if (n.includes("espejo")) return 1.13;
   if (n.includes("barra cargada")) return 0.45;
   if (n.includes("barra olímpica")||n.includes("barra olimpica")) return 0.05;
@@ -903,7 +879,6 @@ const MAT_PAD   = ()=> new THREE.MeshStandardMaterial({ color:0x111114, roughnes
 const MAT_BAR   = ()=> new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughness:0.28, metalness:0.35 });
 // Pintado del equipamiento: todo negro, barras plateadas
 function paintModel(model, url){
-  if (/bano|entrada/i.test(url)) return;              // traen sus propias texturas
   let mat;
   if (/barra_olimpica/i.test(url)){
     mat = new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughness:0.28, metalness:0.35 });
@@ -964,16 +939,28 @@ function gltfLoader(){
   }
   _gltfLoader = l; return l;
 }
+const GLB_CACHE = {};
+function getGLB(url){
+  if (!GLB_CACHE[url]) GLB_CACHE[url] = new Promise((res, rej)=>{
+    gltfLoader().load(url, gltf=>{
+      const m = gltf.scene;
+      paintModel(m, url);
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.userData.shared=true;
+        (Array.isArray(o.material)?o.material:[o.material]).forEach(mt=>{ if(mt) mt.userData.shared=true; }); } });
+      res(m);
+    }, undefined, err=>{ delete GLB_CACHE[url]; rej(err); });
+  });
+  return GLB_CACHE[url];
+}
 function loadGLB(g, url, targetW, targetD, targetH, uniform){
   if (typeof THREE.GLTFLoader === "undefined"){
     console.warn("GLTFLoader no disponible");
     box(g, 0, targetH/2, 0, targetW*0.6, targetH, targetD*0.6);
     return;
   }
-  gltfLoader().load(url, gltf=>{
-    const model = gltf.scene;
-    paintModel(model, url);
-    model.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+  getGLB(url).then(src=>{
+    const model = src.clone(true);
+    R3.dirty = true;
     // Meshy exporta de pie (Y = altura). NO tocar la vertical.
     let bb = new THREE.Box3().setFromObject(model);
     let size = new THREE.Vector3(); bb.getSize(size);
@@ -1016,7 +1003,7 @@ function loadGLB(g, url, targetW, targetD, targetH, uniform){
       model.position.y -= bb3.min.y;   // apoyar al suelo
     }
     g.add(model);
-  }, undefined, err=>{
+  }).catch(err=>{
     console.warn("Error cargando GLB:", url, err);
     box(g, 0, targetH/2, 0, targetW*0.6, targetH, targetD*0.6);
   });
@@ -1053,8 +1040,6 @@ const GLB_MAP = [
   ["espejo",      "models/espejo.glb"],
   ["power rack rojo","models/power_rack_rojo.glb"],
   ["remo t","models/remo_t.glb"],
-  ["entrada baño","models/entrada_bano.glb"],
-  ["entrada (cub","models/entrada.glb"],
   ["dk-701",      "models/DK701.glb"],
   ["dk701",       "models/DK701.glb"],
   ["bici",        "models/DK701.glb"],
@@ -1262,10 +1247,6 @@ function buildMachine(it){
   }
 
   // === Césped: lámina verde fina ===
-  if (n.includes("césped") || n.includes("cesped")){
-    box(g, 0, 0.015, 0, w, 0.03, d, new THREE.MeshStandardMaterial({ color:0x4a7a3a, roughness:0.98, metalness:0 }));
-    return g;
-  }
 
   // === Tarima de peso muerto: losa lisa de 5 cm ===
   if (n.includes("tarima pm")){
@@ -1345,19 +1326,28 @@ function build3D(){
   const host = document.getElementById("view3d");
   R3.walls = []; R3.pieces = []; R3.selGrp = null; R3.selBox = null; update3DPanel();
   // limpiar render previo
-  if (R3.renderer){ host.removeChild(R3.renderer.domElement); R3.renderer.dispose(); }
+  if (R3.scene) disposeScene(R3.scene);
   const W = host.clientWidth, H = host.clientHeight;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xbfc2c6);
   scene.fog = new THREE.Fog(0xbfc2c6, 30, 70);
   const cam = new THREE.PerspectiveCamera(50, W/H, 0.1, 200);
-  const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
-  renderer.setSize(W, H); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95; }
-  if ("outputEncoding" in renderer && THREE.sRGBEncoding!==undefined) renderer.outputEncoding = THREE.sRGBEncoding;
-  host.appendChild(renderer.domElement);
+  let renderer = R3.renderer;
+  if (!renderer){                                   // un solo contexto WebGL para toda la sesión
+    renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = true;
+    if (THREE.ACESFilmicToneMapping!==undefined){ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95; }
+    if ("outputEncoding" in renderer && THREE.sRGBEncoding!==undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+    host.appendChild(renderer.domElement);
+    attachControls(renderer.domElement);
+    // cualquier interacción en la vista 3D pide un nuevo fotograma
+    ["pointerdown","pointermove","pointerup","wheel","touchstart","touchmove","touchend","click"].forEach(ev=>host.addEventListener(ev, ()=>{ R3.dirty=true; }, {capture:true, passive:true}));
+    window.addEventListener("resize", ()=>{ if(!R3.on||!R3.cam) return; const w=host.clientWidth, h=host.clientHeight; renderer.setSize(w,h); R3.cam.aspect=w/h; R3.cam.updateProjectionMatrix(); R3.dirty=true; });
+  }
+  renderer.setSize(W, H);
 
   // --- Texturas procedurales ---
   function rubberTexture(){
@@ -1522,15 +1512,29 @@ function build3D(){
   }
   applyCam(cam);
 
-  R3.scene=scene; R3.cam=cam; R3.renderer=renderer;
-  attachControls(renderer.domElement, cam);
+  R3.scene=scene; R3.cam=cam; R3.renderer=renderer; R3.dirty=true;
   updateWalls(); updateCeiling();
 
   cancelAnimationFrame(R3.raf);
-  (function loop(){ R3.raf = requestAnimationFrame(loop); if(R3.selBox) R3.selBox.update(); renderer.render(scene, cam); })();
+  let _t=performance.now();
+  (function loop(){ R3.raf = requestAnimationFrame(loop); const t=performance.now(), dt=Math.min(0.1,(t-_t)/1000); _t=t;
+    if(R3.walk) walkStep(dt);
+    if(!R3.dirty) return;                       // sin cambios: no se redibuja (ahorra batería/CPU)
+    R3.dirty=false;
+    if(R3.selBox) R3.selBox.update(); renderer.render(scene, cam); })();
+  updateModeUI();
 }
 
 function applyCam(cam){
+  R3.dirty = true;
+  if (R3.walk){
+    const w=R3.walk, cp=Math.cos(w.pitch);
+    if (cam.fov!==72){ cam.fov=72; cam.updateProjectionMatrix(); }
+    cam.position.set(w.x, EYE_H, w.z);
+    cam.lookAt(w.x + cp*Math.sin(w.yaw), EYE_H + Math.sin(w.pitch), w.z + cp*Math.cos(w.yaw));
+    return;
+  }
+  if (cam.fov!==50){ cam.fov=50; cam.updateProjectionMatrix(); }
   const o = R3.orbit;
   cam.position.set(
     o.tx + o.r*Math.sin(o.phi)*Math.cos(o.theta),
@@ -1541,7 +1545,7 @@ function applyCam(cam){
 }
 
 // controles orbit propios (ratón + táctil), sin dependencias externas
-function attachControls(dom, cam){
+function attachControls(dom){
   let mode=null, lx=0, ly=0, ld=0, lcx=0, lcy=0;
   const dist=(t)=>Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY);
   const mid=(t)=>[(t[0].clientX+t[1].clientX)/2,(t[0].clientY+t[1].clientY)/2];
@@ -1566,7 +1570,8 @@ function attachControls(dom, cam){
   dom.onpointerdown = e=>{
     if (e.pointerType==="touch") return;             // el táctil lo maneja touch*
     lx=sx=e.clientX; ly=sy=e.clientY; dom.setPointerCapture(e.pointerId);
-    if (e.button===0 && !e.shiftKey && startPieceDrag(e.clientX, e.clientY)){ mode="drag"; return; }
+    if (R3.walk){ mode="look"; return; }
+    if (!R3.editLock && e.button===0 && !e.shiftKey && startPieceDrag(e.clientX, e.clientY)){ mode="drag"; return; }
     mode = (e.button===2 || e.shiftKey) ? "pan" : "rot";
   };
   dom.onpointermove = e=>{
@@ -1574,22 +1579,26 @@ function attachControls(dom, cam){
     R3.altKey = e.altKey;
     if(mode==="drag"){ dragPieceTo(e.clientX, e.clientY); return; }
     const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if(mode==="look"){ walkLook(dx,dy); return; }
     if(mode==="rot") rotate(dx,dy); else pan(dx,dy);
-    applyCam(cam); updateWalls(); updateCeiling();
+    applyCam(R3.cam); updateWalls(); updateCeiling();
   };
   dom.onpointerup = e=>{
     if(mode==="drag") endPieceDrag();
+    else if(mode==="look" && Math.hypot(e.clientX-sx, e.clientY-sy)<5) walkTapTo(e.clientX, e.clientY);  // clic en el suelo = ir allí
     else if(mode==="rot" && Math.hypot(e.clientX-sx, e.clientY-sy)<5) select3D(null);   // clic en vacío = deseleccionar
     mode=null;
   };
   dom.oncontextmenu = e=>e.preventDefault();
-  dom.onwheel = e=>{ e.preventDefault(); zoom(1 + Math.sign(e.deltaY)*0.08); applyCam(cam); };
+  dom.onwheel = e=>{ e.preventDefault();
+    if (R3.walk){ walkMove(-Math.sign(e.deltaY)*0.35, 0); return; }
+    zoom(1 + Math.sign(e.deltaY)*0.08); applyCam(R3.cam); };
 
   // --- táctil: 1 dedo = rotar · 2 dedos = zoom + pan ---
   dom.addEventListener("touchstart", e=>{
     if(e.touches.length===1){
       lx=sx=e.touches[0].clientX; ly=sy=e.touches[0].clientY;
-      mode = startPieceDrag(lx, ly) ? "drag" : "rot";
+      mode = R3.walk ? "look" : ((!R3.editLock && startPieceDrag(lx, ly)) ? "drag" : "rot");
     }
     else if(e.touches.length===2){ mode="multi"; ld=dist(e.touches); const m=mid(e.touches); lcx=m[0]; lcy=m[1]; }
   }, {passive:true});
@@ -1597,25 +1606,148 @@ function attachControls(dom, cam){
     if(mode==="drag" && e.touches.length===1){
       dragPieceTo(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); return;
     }
+    if(mode==="look" && e.touches.length===1){
+      const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
+      walkLook(dx,dy); e.preventDefault(); return;
+    }
+    if(mode==="multi" && R3.walk && e.touches.length===2){       // paseo: pellizcar = avanzar/retroceder
+      const d=dist(e.touches); if(ld) walkMove((d-ld)*0.012, 0); ld=d; e.preventDefault(); return;
+    }
     if(mode==="rot" && e.touches.length===1){
       const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY;
-      rotate(dx,dy); applyCam(cam); updateWalls(); updateCeiling(); e.preventDefault();
+      rotate(dx,dy); applyCam(R3.cam); updateWalls(); updateCeiling(); e.preventDefault();
     } else if(mode==="multi" && e.touches.length===2){
       const d=dist(e.touches); if(ld) zoom(ld/d); ld=d;
       const m=mid(e.touches); pan(m[0]-lcx, m[1]-lcy); lcx=m[0]; lcy=m[1];
-      applyCam(cam); e.preventDefault();
+      applyCam(R3.cam); e.preventDefault();
     }
   }, {passive:false});
   dom.addEventListener("touchend", e=>{
     if(mode==="drag"){ endPieceDrag(); mode=null; return; }
+    if(mode==="look" && e.touches.length===0 && e.changedTouches.length && Math.hypot(e.changedTouches[0].clientX-sx, e.changedTouches[0].clientY-sy)<8){ walkTapTo(e.changedTouches[0].clientX, e.changedTouches[0].clientY); mode=null; return; }
     if(mode==="rot" && e.touches.length===0 && e.changedTouches.length && Math.hypot(e.changedTouches[0].clientX-sx, e.changedTouches[0].clientY-sy)<8) select3D(null);
-    if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode="rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
+    if(e.touches.length===0) mode=null; else if(e.touches.length===1){ mode=R3.walk?"look":"rot"; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, {passive:true});
 }
 
+
+/* ===== Bloqueo de edición y modo paseo (vista de persona) ===== */
+const EYE_H = 1.65;                         // altura de los ojos (m)
+try{ R3.editLock = localStorage.getItem("patron_lock3d")!=="0"; }catch(e){ R3.editLock = true; }
+R3.walk = null; R3.keys = {}; R3.joy = {x:0, y:0};
+function toggleEditLock(){
+  R3.editLock = !R3.editLock;
+  try{ localStorage.setItem("patron_lock3d", R3.editLock?"1":"0"); }catch(e){}
+  if (R3.editLock) select3D(null);
+  updateModeUI();
+}
+function updateModeUI(){
+  const lb=document.getElementById("lockBtn");
+  if(lb){ lb.textContent = R3.editLock ? "🔒 Bloqueado" : "✋ Editando"; lb.style.borderColor = R3.editLock ? "" : "#d4af37"; lb.style.color = R3.editLock ? "" : "#d4af37"; lb.style.display = R3.walk ? "none" : ""; }
+  const wb=document.getElementById("walkBtn"); if(wb) wb.textContent = R3.walk ? "✕ Salir del paseo" : "🚶 Paseo";
+  const j=document.getElementById("joy"); if(j) j.style.display = R3.walk ? "block" : "none";
+  const h=document.getElementById("hint3d");
+  if(h) h.innerHTML = R3.walk
+    ? "🚶 Joystick / WASD = andar · arrastrar = mirar · toca el suelo = ir allí"
+    : (R3.editLock
+      ? "🔒 Navegación: arrastrar = girar · 2 dedos / rueda = zoom · Shift o clic dcho. = desplazar. Pulsa 🔒 para editar piezas."
+      : "✋ Edición: toca una máquina y arrástrala para moverla · vacío = girar · 2 dedos = zoom/mover");
+}
+function walkStart(){
+  // empieza en la puerta de entrada (si existe), mirando al centro del local
+  const cx=state.W/2, cz=state.H/2;
+  const door=state.items.find(i=>/^puerta/i.test(i.name||""));
+  let x=cx, z=state.H-1.0;
+  if(door){ x=door.x; z=door.y; const dx=cx-x, dz=cz-z, L=Math.hypot(dx,dz)||1; x+=dx/L*1.0; z+=dz/L*1.0; }
+  return { x, z, yaw:Math.atan2(cx-x, cz-z), pitch:-0.05, target:null };
+}
+function toggleWalk(){ if(R3.walk) exitWalk(); else enterWalk(); }
+function enterWalk(){
+  if(!R3.on || !R3.cam) return;
+  select3D(null);
+  R3.walk = walkStart();
+  applyCam(R3.cam); updateWalls(); updateCeiling(); updateModeUI();
+}
+function exitWalk(){
+  R3.walk = null; R3.keys = {}; R3.joy={x:0,y:0};
+  if(R3.cam){ applyCam(R3.cam); updateWalls(); updateCeiling(); }
+  updateModeUI();
+}
+function walkClamp(w){
+  const m=0.25;
+  w.x=Math.max(m, Math.min(state.W-m, w.x));
+  w.z=Math.max(m, Math.min(state.H-m, w.z));
+}
+function walkLook(dx, dy){
+  const w=R3.walk; if(!w) return;
+  w.yaw += dx*0.005;                                   // estilo Street View: arrastras la escena
+  w.pitch = Math.max(-1.2, Math.min(1.2, w.pitch + dy*0.004));
+  applyCam(R3.cam);
+}
+function walkMove(fwd, right){
+  const w=R3.walk; if(!w) return;
+  const fx=Math.sin(w.yaw), fz=Math.cos(w.yaw), rx=-fz, rz=fx;
+  w.x += fx*fwd + rx*right; w.z += fz*fwd + rz*right; w.target=null;
+  walkClamp(w); applyCam(R3.cam);
+}
+function walkTapTo(cx, cy){
+  const p=floorPoint(cx, cy); const w=R3.walk; if(!p || !w) return;
+  w.target={ x:p.x, z:p.z };
+}
+function walkStep(dt){
+  const w=R3.walk; if(!w) return;
+  const k=R3.keys, run=k.shift?2.0:1.0, sp=1.5*run;
+  let f=0, r=0;
+  if(k.w||k.arrowup) f+=1; if(k.s||k.arrowdown) f-=1;
+  if(k.d) r+=1; if(k.a) r-=1;
+  if(k.arrowleft||k.q) { w.yaw += 1.6*dt; applyCam(R3.cam); }
+  if(k.arrowright||k.e){ w.yaw -= 1.6*dt; applyCam(R3.cam); }
+  f += -R3.joy.y; r += R3.joy.x;
+  if(f||r){ walkMove(f*sp*dt, r*sp*dt); return; }
+  if(w.target){                                       // desplazamiento suave hasta el punto tocado
+    const dx=w.target.x-w.x, dz=w.target.z-w.z, L=Math.hypot(dx,dz), stop=0.6;
+    if(L<=stop){ w.target=null; return; }
+    const st=Math.min(L-stop, 2.0*dt);
+    w.x+=dx/L*st; w.z+=dz/L*st;
+    const want=Math.atan2(dx,dz); let dy=want-w.yaw; dy=Math.atan2(Math.sin(dy),Math.cos(dy)); w.yaw+=dy*Math.min(1,4*dt);
+    walkClamp(w); applyCam(R3.cam);
+  }
+}
+function disposeScene(sc){
+  sc.traverse(o=>{
+    if(o.geometry && !o.userData.shared) o.geometry.dispose();
+    if(o.material) (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{
+      if(m.userData && m.userData.shared) return;
+      if(m.map) m.map.dispose(); m.dispose(); });
+  });
+}
+document.addEventListener("keydown", e=>{
+  if(!R3.on || !R3.walk) return;
+  const tag=(e.target && e.target.tagName)||""; if(/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+  const k=e.key.toLowerCase(); if(/^(w|a|s|d|q|e|arrowup|arrowdown|arrowleft|arrowright|shift)$/.test(k)){ R3.keys[k]=true; e.preventDefault(); }
+  if(k==="escape") exitWalk();
+});
+document.addEventListener("keyup", e=>{ R3.keys[e.key.toLowerCase()]=false; });
+window.addEventListener("blur", ()=>{ R3.keys={}; });
+(function initJoy(){
+  const run=()=>{
+    const j=document.getElementById("joy"), knob=document.getElementById("joyKnob"); if(!j) return;
+    let id=null;
+    const set=(e)=>{ const r=j.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2, R=r.width/2-15;
+      let dx=e.clientX-cx, dy=e.clientY-cy; const L=Math.hypot(dx,dy); if(L>R){ dx*=R/L; dy*=R/L; }
+      knob.style.left=(35+dx)+"px"; knob.style.top=(35+dy)+"px"; R3.joy={ x:dx/R, y:dy/R }; };
+    const reset=()=>{ id=null; knob.style.left="35px"; knob.style.top="35px"; R3.joy={x:0,y:0}; };
+    j.addEventListener("pointerdown", e=>{ id=e.pointerId; j.setPointerCapture(id); set(e); e.preventDefault(); e.stopPropagation(); });
+    j.addEventListener("pointermove", e=>{ if(e.pointerId===id) set(e); });
+    j.addEventListener("pointerup", reset); j.addEventListener("pointercancel", reset);
+    ["touchstart","touchmove"].forEach(ev=>j.addEventListener(ev, e=>e.stopPropagation(), {passive:true}));
+  };
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", run); else run();
+})();
 
 /* ===== Vistas predefinidas, paredes transparentes y colores por zona ===== */
 function setView(kind){
   if(!R3.on || !R3.cam) return;
+  if(R3.walk) exitWalk();
   const o=R3.orbit, rad=Math.max(state.W,state.H);
   if(kind==="planta"){ o.phi=0.10; o.theta=Math.PI*0.5; o.r=rad*1.25; }
   else if(kind==="iso"){ o.phi=Math.PI*0.30; o.theta=Math.PI*0.55; o.r=rad*1.15; }
@@ -1631,8 +1763,10 @@ function toggleWalls(){
   updateWalls();
 }
 function updateWalls(){
+  R3.dirty = true;
   if(!R3.walls.length || !R3.cam) return;
   for(const w of R3.walls){
+    if(R3.walk){ w.visible=true; w.material.opacity=w.userData.isGlass?0.16:1; w.material.transparent=!!w.userData.isGlass; w.material.depthWrite=!w.userData.isGlass; continue; }
     if(R3.wallMode==="ocultas"){ w.visible=false; continue; }
     if(R3.wallMode==="visibles"){ w.visible=true; w.material.opacity=w.userData.isGlass?0.16:1; w.material.transparent=w.userData.isGlass; continue; }
     // auto: la pared se difumina si está entre la cámara y el centro
@@ -1698,7 +1832,9 @@ function toggleCeiling(){
   updateCeiling();
 }
 function updateCeiling(){
+  R3.dirty = true;
   if(!R3.ceiling) return;
+  if(R3.walk){ R3.ceiling.visible=true; return; }
   if(R3.ceilMode==="visible"){ R3.ceiling.visible=true; return; }
   if(R3.ceilMode==="oculto"){ R3.ceiling.visible=false; return; }
   // auto: visible sólo cuando la cámara está baja (vista de interior), oculto en cenital
@@ -1751,6 +1887,7 @@ function floorPoint(cx, cy){
   return screenRay(cx,cy).ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0), 0), out) ? out : null;
 }
 function select3D(grp){
+  R3.dirty = true;
   if(!R3.scene) return;
   if(R3.selBox){ R3.scene.remove(R3.selBox); R3.selBox=null; }
   R3.selGrp = grp || null;
@@ -1986,6 +2123,7 @@ function toggle3D(){
     if (typeof THREE === "undefined"){ v3.innerHTML = '<div style="color:#e06666;padding:20px">No se pudo cargar el motor 3D (sin conexión?). Reintenta con internet.</div>'; return; }
     build3D();
   } else {
+    if (R3.walk) exitWalk();
     v3.style.display = "none";
     w2.style.display = "flex";
     btn.textContent = "Ver en 3D";
