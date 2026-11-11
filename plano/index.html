@@ -265,7 +265,8 @@ const PAL = {
     ["Barra olímpica vacía", 0.05, 2.20, "#c9a24b"],
     ["Barra cargada", 0.45, 2.20, "#c9a24b"],
     ["Power Rack rojo", 1.24, 1.60, "#c0392b"],
-    ["Remo T", 1.00, 1.87, "#6ac46a"]
+    ["Remo T", 1.00, 1.87, "#6ac46a"],
+    ["Árbol Maek + barras (tuyo)", 0.50, 0.60, "#b07aa1"]
   ],
   palMuebles: [
     ["Sillón (gris)", 0.62, 0.70, "#9a9894", "rect"],
@@ -881,6 +882,7 @@ function itemHeight(name){
   if (n.includes("barra olímpica")||n.includes("barra olimpica")) return 0.05;
   if (n.includes("df62")||n.includes("rack mancuernas")) return 0.89;
   if (n.includes("df36")||n.includes("banco ajust")) return 1.22;
+  if (n.includes("maek")) return 2.25;          // árbol Maek con 2 barras de pie (2,20 m)
   if (n.includes("df64")) return 1.03;
   if (n.includes("df65")||n.includes("árbol")||n.includes("arbol")) return 1.26;
   if (n.includes("cambia")) return 0.85;
@@ -911,6 +913,7 @@ const MAT_BAR   = ()=> new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughnes
 // Pintado del equipamiento: todo negro, barras plateadas
 function paintModel(model, url){
   let mat;
+  if (/arbol_maek/i.test(url)) return;          // trae sus propios colores (discos Maniak, barras cromadas)
   if (/barra_olimpica/i.test(url)){
     mat = new THREE.MeshStandardMaterial({ color:0xc4c7cc, roughness:0.28, metalness:0.35 });
   } else if (/barra_cargada/i.test(url)){
@@ -1071,6 +1074,7 @@ const GLB_MAP = [
   ["rack mancuernas", "models/DF62.glb"],
   ["df36",        "models/banco_inclinable.glb"],
   ["banco ajust", "models/banco_inclinable.glb"],
+  ["maek",        "models/arbol_maek.glb"],
   ["df64",        "models/rack_discos_deluxe.glb"],
   ["df65",        "models/plate_tree.glb"],
   ["árbol",       "models/plate_tree.glb"],
